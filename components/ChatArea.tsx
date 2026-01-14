@@ -24,6 +24,8 @@ const ALL_MENTIONABLE_USERS = [
 ];
 
 const MentionText: React.FC<{ content: string }> = ({ content }) => {
+  if (!content) return null;
+  
   const parts = content.split(/(@\w+)/g);
 
   return (
@@ -169,7 +171,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           const prevMsgDate = prevMsg ? new Date(prevMsg.timestamp) : new Date(0);
           
           const isGrouped = prevMsg && prevMsg.sender.id === msg.sender.id && (msgDate.getTime() - prevMsgDate.getTime() < 5 * 60 * 1000);
-          const isMentioned = msg.content.includes('@everyone') || msg.content.includes('@here') || (typingUser && msg.content.includes(`@${typingUser.username}`));
+          const isMentioned = msg.content && (msg.content.includes('@everyone') || msg.content.includes('@here') || (typingUser && msg.content.includes(`@${typingUser.username}`)));
           
           return (
             <div 
