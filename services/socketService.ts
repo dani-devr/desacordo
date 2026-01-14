@@ -3,23 +3,29 @@ import { Message, User } from '../types';
 
 class SocketService {
   private socket: Socket | null = null;
-  private isConnected: boolean = false;
-
+  
   public connect(user: User) {
-    if (this.socket) return;
+    if (this.socket?.connected) return;
 
-    // Connect to the local node server
-    this.socket = io('http://localhost:3001');
+    // Connect to the current origin (window.location.origin) by default
+    this.socket = io({
+      path: '/socket.io',
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+      transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
+    });
 
     this.socket.on('connect', () => {
-      this.isConnected = true;
-      console.log('Connected to socket server');
+      console.log('Connected to socket server with ID:', this.socket?.id);
       this.socket?.emit('join_server', user);
     });
 
-    this.socket.on('disconnect', () => {
-      this.isConnected = false;
-      console.log('Disconnected from socket server');
+    this.socket.on('disconnect', (reason) => {
+      console.log('Disconnected from socket server:', reason);
+    });
+
+    this.socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
     });
   }
 
@@ -32,6 +38,8 @@ class SocketService {
   public sendMessage(message: Message) {
     if (this.socket) {
       this.socket.emit('send_message', message);
+    } else {
+      console.warn("Cannot send message: Socket not connected");
     }
   }
 
@@ -50,6 +58,12 @@ class SocketService {
   public onTyping(callback: (data: { channelId: string, username: string }) => void) {
     if (this.socket) {
       this.socket.on('display_typing', callback);
+    }
+  }
+
+  public onUserListUpdate(callback: (users: User[]) => void) {
+    if (this.socket) {
+      this.socket.on('user_list_update', callback);
     }
   }
 
