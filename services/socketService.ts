@@ -7,25 +7,16 @@ class SocketService {
   public connect(user: User) {
     if (this.socket?.connected) return;
 
-    // Connect to the current origin (window.location.origin) by default
     this.socket = io({
       path: '/socket.io',
       reconnectionAttempts: 10,
       reconnectionDelay: 2000,
-      transports: ['websocket', 'polling'], // Try websocket first, fallback to polling
+      transports: ['websocket', 'polling'],
     });
 
     this.socket.on('connect', () => {
-      console.log('Connected to socket server with ID:', this.socket?.id);
+      console.log('Connected to socket server');
       this.socket?.emit('join_server', user);
-    });
-
-    this.socket.on('disconnect', (reason) => {
-      console.log('Disconnected from socket server:', reason);
-    });
-
-    this.socket.on('connect_error', (err) => {
-      console.error('Socket connection error:', err.message);
     });
   }
 
@@ -38,8 +29,6 @@ class SocketService {
   public sendMessage(message: Message) {
     if (this.socket) {
       this.socket.emit('send_message', message);
-    } else {
-      console.warn("Cannot send message: Socket not connected");
     }
   }
 
@@ -50,21 +39,23 @@ class SocketService {
   }
 
   public onReceiveMessage(callback: (message: Message) => void) {
-    if (this.socket) {
-      this.socket.on('receive_message', callback);
-    }
+    this.socket?.on('receive_message', callback);
+  }
+
+  public onChannelHistory(callback: (data: { channelId: string, messages: Message[] }) => void) {
+    this.socket?.on('channel_history', callback);
+  }
+
+  public onSyncUsers(callback: (users: User[]) => void) {
+    this.socket?.on('sync_users', callback);
+  }
+
+  public onUserStatusChange(callback: (data: { userId: string, status: 'online'|'offline' }) => void) {
+    this.socket?.on('user_status_change', callback);
   }
 
   public onTyping(callback: (data: { channelId: string, username: string }) => void) {
-    if (this.socket) {
-      this.socket.on('display_typing', callback);
-    }
-  }
-
-  public onUserListUpdate(callback: (users: User[]) => void) {
-    if (this.socket) {
-      this.socket.on('user_list_update', callback);
-    }
+    this.socket?.on('display_typing', callback);
   }
 
   public disconnect() {

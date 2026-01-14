@@ -67,8 +67,9 @@ export const getInitialMessages = (): Record<string, Message[]> => {
   const createMsg = (offsetMinutes: number, user: User, content: string, channelId: string): Message => ({
     id: crypto.randomUUID(),
     content,
+    senderId: user.id,
     sender: user,
-    timestamp: new Date(now.getTime() - offsetMinutes * 60000),
+    timestamp: new Date(now.getTime() - offsetMinutes * 60000).toISOString(),
     channelId
   });
 
