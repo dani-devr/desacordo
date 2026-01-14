@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { Server } from '../types';
-import { generateChannels } from '../constants';
 
 interface CreateServerModalProps {
   onClose: () => void;
-  onCreate: (server: Server) => void;
+  onCreate: (serverData: { name: string }) => void;
 }
 
 const CreateServerModal: React.FC<CreateServerModalProps> = ({ onClose, onCreate }) => {
@@ -13,17 +12,8 @@ const CreateServerModal: React.FC<CreateServerModalProps> = ({ onClose, onCreate
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!serverName.trim()) return;
-
-    const newServerId = `server-${crypto.randomUUID()}`;
-    const newServer: Server = {
-      id: newServerId,
-      name: serverName.trim(),
-      iconUrl: `https://picsum.photos/seed/${newServerId}/100/100`, // Generate random image based on ID
-      channels: generateChannels(newServerId)
-    };
-
-    onCreate(newServer);
-    onClose();
+    
+    onCreate({ name: serverName.trim() });
   };
 
   return (

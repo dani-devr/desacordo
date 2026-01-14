@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
 import { Channel, Message, User } from '../types';
 
 interface ChatAreaProps {
   channel: Channel;
   messages: Message[];
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, attachments?: {id: string, type: 'image'|'video'|'file', url: string, name: string}[]) => void;
   isTyping: boolean;
   typingUser?: User;
-  onlineUsers?: User[];
 }
 
 const ChatArea: React.FC<ChatAreaProps> = ({ 
@@ -20,9 +20,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   typingUser,
 }) => {
   const [inputValue, setInputValue] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [messages, isTyping, channel.id]);
@@ -33,8 +34,37 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       if (inputValue.trim()) {
         onSendMessage(inputValue);
         setInputValue('');
+        setShowEmojiPicker(false);
       }
     }
+  };
+
+  const handleEmojiClick = (emojiData: EmojiClickData) => {
+    setInputValue(prev => prev + emojiData.emoji);
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Convert to Base64 (Simulating upload for this environment)
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result as string;
+      const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file';
+      
+      // Auto-send for now
+      onSendMessage("", [{
+        id: crypto.randomUUID(),
+        type,
+        url: base64,
+        name: file.name
+      }]);
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const formatTime = (dateStr: string) => {
@@ -50,7 +80,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-[#313338] min-w-0 relative">
+    <div className="flex-1 flex flex-col bg-[#313338] min-w-0 relative h-full">
       {/* Header */}
       <div className="h-12 border-b border-[#26272d] shadow-sm flex items-center px-4 flex-shrink-0 z-10 bg-[#313338]">
         <div className="text-2xl text-[#80848E] mr-2 font-light">
@@ -65,7 +95,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col px-4 pt-4">
+      <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col px-4 pt-4" onClick={() => setShowEmojiPicker(false)}>
         {messages.length === 0 && (
            <div className="mt-auto mb-6">
              <div className="w-16 h-16 bg-[#41434a] rounded-full flex items-center justify-center mb-4">
@@ -77,17 +107,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         )}
 
         {messages.map((msg, index) => {
-          // If msg.sender is missing (legacy/error), mock it to prevent crash
           const sender = msg.sender || { username: 'Unknown', avatarUrl: '', id: 'unknown', isBot: false };
-          
           const prevMsg = messages[index - 1];
           const msgDate = new Date(msg.timestamp);
           const prevMsgDate = prevMsg ? new Date(prevMsg.timestamp) : new Date(0);
           
-          // Group if same user and < 5 mins apart
           const isGrouped = prevMsg && 
-            prevMsg.sender && 
-            prevMsg.sender.id === sender.id && 
+            prevMsg.senderId === sender.id && 
             (msgDate.getTime() - prevMsgDate.getTime() < 5 * 60 * 1000);
 
           return (
@@ -98,31 +124,31 @@ const ChatArea: React.FC<ChatAreaProps> = ({
               {!isGrouped ? (
                 <>
                   <div className="flex-shrink-0 cursor-pointer mt-0.5">
-                    <img 
-                      src={sender.avatarUrl} 
-                      alt={sender.username}
-                      className="w-10 h-10 rounded-full hover:opacity-80 transition-opacity"
-                    />
+                    <img src={sender.avatarUrl} alt={sender.username} className="w-10 h-10 rounded-full hover:opacity-80 transition-opacity"/>
                   </div>
                   <div className="flex-1 min-w-0 ml-4">
                     <div className="flex items-center">
-                      <span className="font-medium text-white hover:underline cursor-pointer mr-2">
-                        {sender.username}
-                      </span>
-                      {sender.isBot && (
-                        <span className="bg-[#5865F2] text-white text-[10px] px-1.5 rounded-[4px] py-[1px] uppercase font-bold flex items-center h-[15px] mt-[1px]">
-                           Bot
-                        </span>
-                      )}
-                      <span className="text-xs text-[#949BA4] ml-2 font-medium">
-                        {formatTime(msg.timestamp)}
-                      </span>
+                      <span className="font-medium text-white hover:underline cursor-pointer mr-2">{sender.username}</span>
+                      {sender.isBot && <span className="bg-[#5865F2] text-white text-[10px] px-1.5 rounded uppercase font-bold flex items-center h-[15px] mt-[1px]">Bot</span>}
+                      <span className="text-xs text-[#949BA4] ml-2 font-medium">{formatTime(msg.timestamp)}</span>
                     </div>
-                    <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
+                    {/* Attachments */}
+                    {msg.attachments?.map(att => (
+                        <div key={att.id} className="mt-2 mb-1">
+                            {att.type === 'image' && (
+                                <img src={att.url} alt={att.name} className="max-w-full max-h-[300px] rounded-lg border border-[#2b2d31]" />
+                            )}
+                            {att.type === 'video' && (
+                                <video src={att.url} controls className="max-w-full max-h-[300px] rounded-lg" />
+                            )}
+                        </div>
+                    ))}
+                    {/* Text Content */}
+                    {msg.content && (
+                        <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -131,11 +157,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                      {formatTime(msg.timestamp).split('at ')[1]}
                   </div>
                   <div className="flex-1 min-w-0 ml-4">
-                     <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {msg.content}
-                        </ReactMarkdown>
-                     </div>
+                     {/* Attachments Grouped */}
+                    {msg.attachments?.map(att => (
+                        <div key={att.id} className="mt-1 mb-1">
+                            {att.type === 'image' && <img src={att.url} alt={att.name} className="max-w-full max-h-[300px] rounded-lg border border-[#2b2d31]" />}
+                            {att.type === 'video' && <video src={att.url} controls className="max-w-full max-h-[300px] rounded-lg" />}
+                        </div>
+                    ))}
+                     {msg.content && (
+                         <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        </div>
+                     )}
                   </div>
                 </>
               )}
@@ -145,12 +178,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
         {isTyping && typingUser && (
            <div className="mt-2 pl-[56px] flex items-center pb-2">
-              <div className="flex space-x-1">
-                 <div className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce"></div>
-                 <div className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                 <div className="w-2 h-2 bg-[#b5bac1] rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-              </div>
-              <span className="ml-2 text-sm text-[#b5bac1] font-bold">{typingUser.username} is typing...</span>
+              <span className="text-sm text-[#b5bac1] font-bold animate-pulse">{typingUser.username} is typing...</span>
            </div>
         )}
 
@@ -158,8 +186,24 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Input */}
-      <div className="px-4 pb-6 flex-shrink-0 z-10">
-        <div className="bg-[#383a40] rounded-lg px-4 py-2.5 flex items-center">
+      <div className="px-4 pb-6 flex-shrink-0 z-10 relative">
+        <div className="bg-[#383a40] rounded-lg px-4 py-2.5 flex items-center relative">
+          
+          {/* File Upload Button */}
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="w-6 h-6 rounded-full bg-[#b5bac1] hover:text-white flex items-center justify-center mr-3 hover:bg-[#dbdee1] transition-colors"
+          >
+            <span className="text-[#313338] font-bold text-lg leading-none pb-0.5">+</span>
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept="image/*,video/*"
+            onChange={handleFileChange}
+          />
+
           <input
             type="text"
             className="bg-transparent flex-1 text-[#dbdee1] placeholder-[#949BA4] outline-none font-medium"
@@ -168,7 +212,25 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
           />
+          
+          {/* Emoji Button */}
+          <button 
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+            className="ml-2 text-[#b5bac1] hover:text-[#dbdee1] grayscale hover:grayscale-0 transition-all"
+          >
+             <div className="w-6 h-6 text-xl">😃</div>
+          </button>
         </div>
+
+        {showEmojiPicker && (
+            <div className="absolute bottom-20 right-4 z-50 shadow-2xl rounded-xl">
+                <EmojiPicker 
+                    theme={Theme.DARK} 
+                    onEmojiClick={handleEmojiClick}
+                    lazyLoadEmojis={true}
+                />
+            </div>
+        )}
       </div>
       
       <style>{`
@@ -179,10 +241,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
         .markdown-content pre code { background: transparent; padding: 0; }
         .markdown-content a { color: #00A8FC; text-decoration: none; }
         .markdown-content a:hover { text-decoration: underline; }
-        .markdown-content blockquote { border-left: 4px solid #4e5058; padding-left: 8px; color: #949ba4; }
-        .markdown-content ul { list-style-type: disc; padding-left: 20px; }
-        .markdown-content ol { list-style-type: decimal; padding-left: 20px; }
-        .markdown-content strong { font-weight: 700; color: white; }
       `}</style>
     </div>
   );

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Channel, User, Server } from '../types';
+import { socketService } from '../services/socketService';
 
 interface ChannelSidebarProps {
   server?: Server;
@@ -18,10 +19,22 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   isHome,
   dmChannels
 }) => {
+  const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [newChannelName, setNewChannelName] = useState('');
+
+  const handleCreateChannel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newChannelName.trim() && server) {
+        socketService.createChannel(server.id, newChannelName.trim());
+        setNewChannelName('');
+        setShowCreateChannel(false);
+    }
+  };
+
   return (
     <div className="w-60 bg-[#2b2d31] flex flex-col flex-shrink-0">
       {/* Header */}
-      <div className="h-12 shadow-sm border-b border-[#1f2023] flex items-center px-4 hover:bg-[#35373c] cursor-pointer transition-colors">
+      <div className="h-12 shadow-sm border-b border-[#1f2023] flex items-center px-4 hover:bg-[#35373c] cursor-pointer transition-colors relative">
         {isHome ? (
            <input 
              className="bg-[#1e1f22] text-sm text-[#dbdee1] rounded px-2 py-1 w-full outline-none" 
@@ -46,7 +59,7 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
               </div>
               {dmChannels.length === 0 && (
                 <div className="px-2 text-xs text-[#949ba4] italic mt-2">
-                  No conversations yet. Click a member on the right to chat!
+                  No active conversations. Click a member on the right to start chatting!
                 </div>
               )}
               {dmChannels.map(dm => (
@@ -57,21 +70,47 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                     currentChannel.id === dm.id ? 'bg-[#404249] text-white' : 'text-[#949BA4] hover:bg-[#35373c] hover:text-[#dbdee1]'
                   }`}
                 >
-                  <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center mr-2 text-white font-bold text-xs">
+                  <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center mr-2 text-white font-bold text-xs shrink-0">
                     {dm.name.substring(0,2).toUpperCase()}
                   </div>
                   <span className={`font-medium truncate ${currentChannel.id === dm.id ? 'text-white' : ''}`}>
                     {dm.name}
                   </span>
+                  <button className="ml-auto opacity-0 group-hover:opacity-100 text-[#b5bac1] hover:text-white">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                  </button>
                 </button>
               ))}
            </>
         ) : (
           <>
-             <div className="pt-2 px-2 pb-1 flex items-center text-[#949BA4] hover:text-[#dbdee1] cursor-pointer text-xs font-bold uppercase tracking-wide">
-               <svg className="mr-0.5" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-               Text Channels
+             <div className="pt-2 px-2 pb-1 flex items-center justify-between text-[#949BA4] hover:text-[#dbdee1] group cursor-pointer text-xs font-bold uppercase tracking-wide">
+               <div className="flex items-center">
+                 <svg className="mr-0.5" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                 Text Channels
+               </div>
+               <button 
+                  onClick={() => setShowCreateChannel(true)}
+                  className="text-[#949BA4] hover:text-white"
+                  title="Create Channel"
+               >
+                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+               </button>
              </div>
+
+             {showCreateChannel && (
+                 <form onSubmit={handleCreateChannel} className="px-2 mb-2">
+                     <input 
+                        autoFocus
+                        className="w-full bg-[#1e1f22] text-[#dbdee1] text-sm rounded px-2 py-1 outline-none border border-[#00A8FC]" 
+                        placeholder="new-channel"
+                        value={newChannelName}
+                        onChange={e => setNewChannelName(e.target.value)}
+                        onBlur={() => !newChannelName && setShowCreateChannel(false)}
+                     />
+                 </form>
+             )}
+
              {server?.channels.map((channel) => (
               <button
                 key={channel.id}

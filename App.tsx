@@ -5,15 +5,14 @@ import ChatArea from './components/ChatArea';
 import Auth from './components/Auth';
 import CreateServerModal from './components/CreateServerModal';
 import { User, Message, Server, Channel, ChannelType } from './types';
-import { DEFAULT_SERVERS } from './constants';
 import { socketService } from './services/socketService';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [servers, setServers] = useState<Server[]>(DEFAULT_SERVERS);
-  const [activeServerId, setActiveServerId] = useState<string>('HOME'); // 'HOME' is for DMs
+  const [servers, setServers] = useState<Server[]>([]);
+  const [activeServerId, setActiveServerId] = useState<string>('HOME'); 
   const [showCreateServer, setShowCreateServer] = useState(false);
-  const [allUsers, setAllUsers] = useState<User[]>([]); // Synced from server
+  const [allUsers, setAllUsers] = useState<User[]>([]); 
   
   // DMs State
   const [dmChannels, setDmChannels] = useState<Channel[]>([]);
@@ -35,17 +34,34 @@ const App: React.FC = () => {
     if (user) {
       socketService.connect(user);
 
-      // 1. Sync User List (Registered Users)
-      socketService.onSyncUsers((users) => {
-        setAllUsers(users);
+      socketService.onSyncUsers((users) => setAllUsers(users));
+      
+      socketService.onUserRegistered((newUser) => {
+         setAllUsers(prev => {
+            if (prev.find(u => u.id === newUser.id)) return prev;
+            return [...prev, newUser];
+         });
       });
 
-      // 2. Listen for Real-time Status Changes
+      socketService.onSyncServers((syncedServers) => {
+        setServers(syncedServers);
+      });
+
+      socketService.onSyncDMs((syncedDMs) => {
+         setDmChannels(syncedDMs);
+      });
+
+      socketService.onNewDMOpened((newDM) => {
+         setDmChannels(prev => {
+           if (prev.find(d => d.id === newDM.id)) return prev;
+           return [newDM, ...prev];
+         });
+      });
+
       socketService.onUserStatusChange(({ userId, status }) => {
         setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u));
       });
 
-      // 3. Receive Messages
       socketService.onReceiveMessage((newMessage) => {
         setMessages(prev => ({
           ...prev,
@@ -53,7 +69,6 @@ const App: React.FC = () => {
         }));
       });
 
-      // 4. Receive History when joining a channel
       socketService.onChannelHistory(({ channelId, messages: history }) => {
         setMessages(prev => ({
           ...prev,
@@ -61,7 +76,6 @@ const App: React.FC = () => {
         }));
       });
 
-      // 5. Typing Indicators
       socketService.onTyping((data) => {
          const currentId = activeServerId === 'HOME' ? activeDmId : currentChannelId;
          if (data.channelId === currentId) {
@@ -88,26 +102,32 @@ const App: React.FC = () => {
     } else {
       setCurrentChannelId(channelId);
     }
-    // Join socket room to receive messages/history
     socketService.joinChannel(channelId);
   };
 
   // Set initial channel when changing server
   useEffect(() => {
     if (activeServerId !== 'HOME' && activeServer) {
-       handleSwitchChannel(activeServer.channels[0].id);
+       // If currentChannelId is not in this server, default to first channel
+       const exists = activeServer.channels.find(c => c.id === currentChannelId);
+       if (!exists && activeServer.channels.length > 0) {
+          handleSwitchChannel(activeServer.channels[0].id);
+       } else if (exists) {
+           handleSwitchChannel(exists.id);
+       }
     }
-  }, [activeServerId]);
+  }, [activeServerId, activeServer]);
 
   // --- DM LOGIC ---
   const startDM = (targetUser: User) => {
-    if (targetUser.id === user?.id) return; // Can't DM self
+    if (targetUser.id === user?.id) return; 
 
-    // Create a deterministic Channel ID based on user IDs
+    // Deterministic ID
     const channelId = [user!.id, targetUser.id].sort().join('_');
     
-    // Check if DM exists locally
+    // Check if we already have it locally
     const existing = dmChannels.find(c => c.id === channelId);
+    
     if (!existing) {
       const newDm: Channel = {
         id: channelId,
@@ -123,6 +143,17 @@ const App: React.FC = () => {
     socketService.joinChannel(channelId);
   };
 
+  const handleAddFriend = (friendId: string) => {
+     if(user) socketService.addFriend(user.id, friendId);
+  };
+
+  const handleCreateServer = (serverData: any) => {
+     if(user) {
+        socketService.createServer(serverData.name, user.id);
+        setShowCreateServer(false);
+     }
+  };
+
   // --- RENDERING HELPERS ---
   const getActiveChannelObject = (): Channel => {
     if (activeServerId === 'HOME') {
@@ -133,33 +164,27 @@ const App: React.FC = () => {
     return activeServer?.channels.find(c => c.id === currentChannelId) || activeServer!.channels[0];
   };
 
-  const handleSendMessage = useCallback((content: string) => {
+  const handleSendMessage = useCallback((content: string, attachments?: any[]) => {
     if (!user) return;
     const channelObj = getActiveChannelObject();
     
-    // Optimistic UI Update (optional, but good for perceived speed)
-    // We rely on server echo for truth, but this makes it feel snappy
-    // Actually, for history sync consistency, let's wait for server echo unless laggy.
-    
-    const newMessage: Message = {
+    const newMessage: Partial<Message> = {
       id: crypto.randomUUID(),
       content,
-      senderId: user.id, // ID only for transport
-      sender: user,      // Full object for immediate local display if we wanted
+      senderId: user.id,
+      channelId: channelObj.id,
       timestamp: new Date().toISOString(),
-      channelId: channelObj.id
+      attachments: attachments || []
     };
 
     socketService.sendMessage(newMessage);
-  }, [user, activeServerId, activeDmId, currentChannelId]);
+  }, [user, activeServerId, activeDmId, currentChannelId, activeServer]);
 
   if (!user) {
     return <Auth onLogin={setUser} />;
   }
 
   const activeChannelObj = getActiveChannelObject();
-
-  // Sort users: Online first, then offline
   const sortedUsers = [...allUsers].sort((a, b) => {
     if (a.status === b.status) return a.username.localeCompare(b.username);
     return a.status === 'online' ? -1 : 1;
@@ -176,7 +201,7 @@ const App: React.FC = () => {
       />
       
       <ChannelSidebar 
-        server={activeServer} // Undefined if HOME
+        server={activeServer}
         currentChannel={activeChannelObj}
         onSelectChannel={(c) => handleSwitchChannel(c.id)}
         currentUser={user}
@@ -191,18 +216,22 @@ const App: React.FC = () => {
           onSendMessage={handleSendMessage}
           isTyping={isSomeoneTyping}
           typingUser={typingUser}
-          onlineUsers={allUsers.filter(u => u.status === 'online')}
         />
       ) : (
-        <div className="flex-1 flex items-center justify-center bg-[#313338]">
+        <div className="flex-1 flex flex-col items-center justify-center bg-[#313338] p-8">
           <div className="text-center">
-            <h2 className="text-2xl font-bold mb-2">Wumpus is waiting...</h2>
-            <p className="text-[#949ba4]">Select a friend from the right to start a DM.</p>
+            <div className="w-24 h-24 bg-[#383a40] rounded-full mx-auto mb-6 flex items-center justify-center">
+               <span className="text-4xl">👋</span>
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Welcome Back, {user.username}!</h2>
+            <p className="text-[#949ba4] max-w-md mx-auto">
+              Select a DM from the left or a server to start chatting. You can add friends from the member list on the right.
+            </p>
           </div>
         </div>
       )}
       
-      {/* MEMBER LIST (Available in both Server and DM view for simplicity) */}
+      {/* MEMBER LIST */}
       <div className="w-60 bg-[#2b2d31] hidden lg:flex flex-col flex-shrink-0 p-3 overflow-y-auto custom-scrollbar">
         <h2 className="text-[#949BA4] text-xs font-bold uppercase tracking-wide mb-2 mt-2 px-2">
            Members — {sortedUsers.length}
@@ -211,8 +240,8 @@ const App: React.FC = () => {
         {sortedUsers.map((u) => (
              <div 
                key={u.id} 
+               className="flex items-center px-2 py-2 rounded hover:bg-[#35373c] cursor-pointer opacity-100 group transition-colors relative"
                onClick={() => startDM(u)}
-               className="flex items-center px-2 py-2 rounded hover:bg-[#35373c] cursor-pointer opacity-100 group transition-colors"
              >
              <div className="relative mr-3">
                <img src={u.avatarUrl} alt={u.username} className={`w-8 h-8 rounded-full ${u.status === 'offline' ? 'opacity-50' : ''}`} />
@@ -224,6 +253,17 @@ const App: React.FC = () => {
                </div>
                {u.isBot && <span className="bg-[#5865F2] text-white text-[10px] px-1 rounded uppercase ml-1">Bot</span>}
              </div>
+             
+             {/* Simple Add Friend Button (Hover) */}
+             {u.id !== user.id && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); handleAddFriend(u.id); }}
+                  className="absolute right-2 opacity-0 group-hover:opacity-100 text-[#b5bac1] hover:text-green-500"
+                  title="Add Friend"
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                </button>
+             )}
           </div>
          ))}
       </div>
@@ -231,10 +271,7 @@ const App: React.FC = () => {
       {showCreateServer && (
         <CreateServerModal 
             onClose={() => setShowCreateServer(false)}
-            onCreate={(s) => {
-              setServers([...servers, s]);
-              setActiveServerId(s.id);
-            }}
+            onCreate={handleCreateServer}
         />
       )}
     </div>
