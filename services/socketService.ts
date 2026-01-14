@@ -37,14 +37,25 @@ class SocketService {
   public assignRole(serverId: string, userId: string, targetUserId: string, roleId: string) {
       this.socket?.emit('assign_role', { serverId, userId, targetUserId, roleId });
   }
-  public createChannel(serverId: string, channelName: string, userId: string) { 
-      this.socket?.emit('create_channel', { serverId, channelName, type: 'TEXT', userId }); 
+  public createChannel(serverId: string, channelName: string, type: 'TEXT'|'VOICE', userId: string) { 
+      this.socket?.emit('create_channel', { serverId, channelName, type, userId }); 
   }
   public generateInvite(serverId: string, userId: string) {
       this.socket?.emit('generate_invite', { serverId, userId });
   }
   public joinViaInvite(code: string, userId: string) {
       this.socket?.emit('join_via_invite', { code, userId });
+  }
+
+  // Voice
+  public joinVoice(serverId: string, channelId: string, userId: string) {
+      this.socket?.emit('join_voice', { serverId, channelId, userId });
+  }
+  public leaveVoice(serverId: string, channelId: string, userId: string) {
+      this.socket?.emit('leave_voice', { serverId, channelId, userId });
+  }
+  public sendVoiceSignal(to: string, from: string, signal: any) {
+      this.socket?.emit('voice_signal', { to, from, signal });
   }
 
   // Profile
@@ -90,6 +101,9 @@ class SocketService {
   public onSyncFriendRequests(cb: (r: FriendRequest[]) => void) { this.socket?.on('sync_friend_requests', cb); }
   public onNewFriendRequest(cb: (r: FriendRequest) => void) { this.socket?.on('new_friend_request', cb); }
   public onFriendListUpdated(cb: (ids: string[]) => void) { this.socket?.on('friend_list_updated', cb); }
+
+  // Voice
+  public onVoiceSignal(cb: (d: { from: string, signal: any }) => void) { this.socket?.on('voice_signal', cb); }
   
   public onError(cb: (e: string) => void) { this.socket?.on('error', cb); }
 }

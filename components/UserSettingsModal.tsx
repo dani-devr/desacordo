@@ -103,8 +103,11 @@ const UserSettingsModal: React.FC<Props> = ({ user, onClose }) => {
                           </div>
                       </div>
 
-                      <input type="file" ref={avatarInputRef} className="hidden" onChange={e => handleFileChange(e, setAvatar)} />
-                      <input type="file" ref={bannerInputRef} className="hidden" onChange={e => handleFileChange(e, setBanner)} />
+                      {/* GIF Support Explicitly Added to Accept */}
+                      <input type="file" ref={avatarInputRef} className="hidden" accept="image/png, image/jpeg, image/gif" onChange={e => handleFileChange(e, setAvatar)} />
+                      <input type="file" ref={bannerInputRef} className="hidden" accept="image/png, image/jpeg, image/gif" onChange={e => handleFileChange(e, setBanner)} />
+                      
+                      <p className="text-[#b5bac1] text-xs mt-2 italic">Pro Tip: We support GIFs for both avatars and banners!</p>
 
                       <div className="mt-8 flex justify-end max-w-sm">
                            <button onClick={handleSaveProfile} className="bg-[#23a559] text-white px-6 py-2 rounded font-medium">Save Changes</button>

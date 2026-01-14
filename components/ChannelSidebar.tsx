@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Channel, User, Server } from '../types';
+import { Channel, User, Server, ChannelType } from '../types';
 import { socketService } from '../services/socketService';
+import VoiceControlPanel from './VoiceControlPanel';
 
 interface ChannelSidebarProps {
   server?: Server;
@@ -12,6 +13,10 @@ interface ChannelSidebarProps {
   onOpenServerSettings: () => void;
   onOpenUserSettings: () => void;
   notifications: Record<string, number>;
+  activeVoiceChannelId?: string;
+  onJoinVoice?: (channel: Channel) => void;
+  onLeaveVoice?: () => void;
+  allUsers?: User[]; // Needed to show voice participants
 }
 
 const ChannelSidebar: React.FC<ChannelSidebarProps> = ({ 
@@ -23,10 +28,15 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   dmChannels,
   onOpenServerSettings,
   onOpenUserSettings,
-  notifications
+  notifications,
+  activeVoiceChannelId,
+  onJoinVoice,
+  onLeaveVoice,
+  allUsers = []
 }) => {
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
+  const [newChannelType, setNewChannelType] = useState<ChannelType>(ChannelType.TEXT);
 
   // Permission Check
   const canCreateChannel = isHome ? false : server && (
@@ -40,11 +50,15 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   const handleCreateChannel = (e: React.FormEvent) => {
     e.preventDefault();
     if (newChannelName.trim() && server) {
-        socketService.createChannel(server.id, newChannelName.trim(), currentUser.id);
+        socketService.createChannel(server.id, newChannelName.trim(), newChannelType as 'TEXT' | 'VOICE', currentUser.id);
         setNewChannelName('');
         setShowCreateChannel(false);
+        setNewChannelType(ChannelType.TEXT);
     }
   };
+
+  const textChannels = server?.channels.filter(c => c.type === ChannelType.TEXT) || [];
+  const voiceChannels = server?.channels.filter(c => c.type === ChannelType.VOICE) || [];
 
   return (
     <div className="w-60 bg-[#2b2d31] flex flex-col flex-shrink-0">
@@ -77,11 +91,6 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
               <div className="pt-2 px-2 pb-1 flex items-center text-[#949BA4] text-xs font-bold uppercase tracking-wide">
                 Direct Messages
               </div>
-              {dmChannels.length === 0 && (
-                <div className="px-2 text-xs text-[#949ba4] italic mt-2">
-                  No active conversations.
-                </div>
-              )}
               {dmChannels.map(dm => {
                 const notif = notifications[dm.id] || 0;
                 return (
@@ -101,15 +110,13 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                     {notif > 0 && (
                         <div className="ml-auto bg-[#f23f42] text-white text-[10px] font-bold px-1.5 rounded-full">{notif}</div>
                     )}
-                    <button className="ml-auto opacity-0 group-hover:opacity-100 text-[#b5bac1] hover:text-white" onClick={e => e.stopPropagation()}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                    </button>
                   </button>
                 );
               })}
            </>
         ) : (
           <>
+             {/* TEXT CHANNELS */}
              <div className="pt-2 px-2 pb-1 flex items-center justify-between text-[#949BA4] hover:text-[#dbdee1] group cursor-pointer text-xs font-bold uppercase tracking-wide">
                <div className="flex items-center">
                  <svg className="mr-0.5" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -117,29 +124,15 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                </div>
                {canCreateChannel && (
                    <button 
-                      onClick={() => setShowCreateChannel(true)}
+                      onClick={() => { setShowCreateChannel(true); setNewChannelType(ChannelType.TEXT); }}
                       className="text-[#949BA4] hover:text-white"
-                      title="Create Channel"
                    >
                      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
                    </button>
                )}
              </div>
 
-             {showCreateChannel && (
-                 <form onSubmit={handleCreateChannel} className="px-2 mb-2">
-                     <input 
-                        autoFocus
-                        className="w-full bg-[#1e1f22] text-[#dbdee1] text-sm rounded px-2 py-1 outline-none border border-[#00A8FC]" 
-                        placeholder="new-channel"
-                        value={newChannelName}
-                        onChange={e => setNewChannelName(e.target.value)}
-                        onBlur={() => !newChannelName && setShowCreateChannel(false)}
-                     />
-                 </form>
-             )}
-
-             {server?.channels.map((channel) => {
+             {textChannels.map((channel) => {
               const notif = notifications[channel.id] || 0;
               return (
                 <button
@@ -155,15 +148,98 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                   <span className={`font-medium truncate ${currentChannel.id === channel.id || notif > 0 ? 'text-white' : ''} ${notif > 0 ? 'font-bold' : ''}`}>
                     {channel.name}
                   </span>
-                  {notif > 0 && (
-                      <div className="ml-auto w-2 h-2 rounded-full bg-white"></div>
-                  )}
+                  {notif > 0 && <div className="ml-auto w-2 h-2 rounded-full bg-white"></div>}
                 </button>
+              );
+            })}
+
+            {/* VOICE CHANNELS */}
+            <div className="pt-4 px-2 pb-1 flex items-center justify-between text-[#949BA4] hover:text-[#dbdee1] group cursor-pointer text-xs font-bold uppercase tracking-wide">
+               <div className="flex items-center">
+                 <svg className="mr-0.5" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                 Voice Channels
+               </div>
+               {canCreateChannel && (
+                   <button 
+                      onClick={() => { setShowCreateChannel(true); setNewChannelType(ChannelType.VOICE); }}
+                      className="text-[#949BA4] hover:text-white"
+                   >
+                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                   </button>
+               )}
+             </div>
+
+             {voiceChannels.map((channel) => {
+              const isConnected = activeVoiceChannelId === channel.id;
+              return (
+                <div key={channel.id} className="mb-1">
+                    <button
+                        onClick={() => onJoinVoice?.(channel)}
+                        className={`w-full flex items-center px-2 py-1.5 rounded mx-1 group transition-colors ${
+                            isConnected ? 'bg-[#404249]/60 text-white' : 'text-[#949BA4] hover:bg-[#35373c] hover:text-[#dbdee1]'
+                        }`}
+                    >
+                        <svg className="mr-1.5" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2s2-.9 2-2V5c0-1.1-.9-2-2-2zm5 10v-2c0-.55-.45-1-1-1s-1 .45-1 1v2c0 1.66-1.34 3-3 3s-3-1.34-3-3v-2c0-.55-.45-1-1-1s-1 .45-1 1v2c0 2.76 2.24 5 5 5s5-2.24 5-5z"/></svg>
+                        <span className="font-medium truncate">{channel.name}</span>
+                    </button>
+                    {/* Participants List */}
+                    {channel.connectedUserIds && channel.connectedUserIds.length > 0 && (
+                        <div className="ml-8 mt-1 space-y-1">
+                            {channel.connectedUserIds.map(uid => {
+                                const participant = allUsers?.find(u => u.id === uid);
+                                if (!participant) return null;
+                                return (
+                                    <div key={uid} className="flex items-center px-2 py-0.5 rounded hover:bg-[#35373c]/50">
+                                        <img src={participant.avatarUrl} className={`w-5 h-5 rounded-full mr-2 ${participant.id === currentUser.id ? 'border-green-500 border' : ''}`} />
+                                        <span className="text-white text-xs truncate opacity-70">{participant.username}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
               );
             })}
           </>
         )}
+
+         {showCreateChannel && (
+             <div className="px-2 mb-2 bg-[#313338] p-2 rounded mx-1 border border-[#1e1f22]">
+                 <div className="text-xs text-[#b5bac1] font-bold mb-1">CHANNEL TYPE</div>
+                 <div className="flex gap-2 mb-2">
+                     <button 
+                        type="button" 
+                        onClick={() => setNewChannelType(ChannelType.TEXT)}
+                        className={`flex-1 py-1 rounded text-xs font-bold border ${newChannelType === ChannelType.TEXT ? 'bg-[#404249] text-white border-transparent' : 'text-[#b5bac1] border-[#404249]'}`}
+                     >TEXT</button>
+                     <button 
+                        type="button" 
+                        onClick={() => setNewChannelType(ChannelType.VOICE)}
+                        className={`flex-1 py-1 rounded text-xs font-bold border ${newChannelType === ChannelType.VOICE ? 'bg-[#404249] text-white border-transparent' : 'text-[#b5bac1] border-[#404249]'}`}
+                     >VOICE</button>
+                 </div>
+                 <form onSubmit={handleCreateChannel}>
+                     <input 
+                        autoFocus
+                        className="w-full bg-[#1e1f22] text-[#dbdee1] text-sm rounded px-2 py-1 outline-none border border-[#00A8FC]" 
+                        placeholder="new-channel"
+                        value={newChannelName}
+                        onChange={e => setNewChannelName(e.target.value)}
+                        onBlur={() => !newChannelName && setShowCreateChannel(false)}
+                     />
+                 </form>
+             </div>
+         )}
       </div>
+
+      {/* Voice Connection Bar */}
+      {activeVoiceChannelId && (
+          <VoiceControlPanel 
+             onDisconnect={() => onLeaveVoice?.()} 
+             currentUser={currentUser}
+             channelName={voiceChannels.find(c => c.id === activeVoiceChannelId)?.name || 'Voice Channel'}
+          />
+      )}
 
       {/* User Bar */}
       <div className="bg-[#232428] px-2 py-1.5 flex items-center">

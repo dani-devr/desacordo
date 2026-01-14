@@ -67,6 +67,7 @@ export interface Channel {
   systemInstruction?: string;
   icon?: React.ReactNode;
   recipientId?: string;
+  connectedUserIds?: string[]; // Users currently in this voice channel
 }
 
 export interface Server {
@@ -80,5 +81,5 @@ export interface Server {
   invites: Invite[];
   boostLevel: number;
   userRoles?: Record<string, string[]>;
-  vanityUrl?: string; // New: Custom invite code (e.g. "coolserver")
+  vanityUrl?: string;
 }

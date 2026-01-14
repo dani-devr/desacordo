@@ -132,6 +132,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   const extractLinks = (text: string) => {
+      if (!text) return [];
       const urlRegex = /(https?:\/\/[^\s]+)/g;
       const matches = text.match(urlRegex);
       return matches || [];
@@ -200,8 +201,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             prevMsg.senderId === sender.id && 
             (msgDate.getTime() - prevMsgDate.getTime() < 5 * 60 * 1000);
 
-          const links = extractLinks(msg.content);
-          const isMentioningMe = msg.content.includes(`@${currentUser.username}`);
+          const content = msg.content || "";
+          const links = extractLinks(content);
+          const isMentioningMe = content.includes(`@${currentUser.username}`);
 
           return (
             <div 
@@ -246,13 +248,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         </div>
                     ))}
                     {/* Text Content */}
-                    {msg.content && (
+                    {content && (
                         <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
                         <ReactMarkdown 
                             remarkPlugins={[remarkGfm]}
                             components={renderComponents}
                         >
-                            {msg.content}
+                            {content}
                         </ReactMarkdown>
                         </div>
                     )}
@@ -279,13 +281,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                              )}
                         </div>
                     ))}
-                     {msg.content && (
+                     {content && (
                          <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
                             <ReactMarkdown 
                                 remarkPlugins={[remarkGfm]}
                                 components={renderComponents}
                             >
-                                {msg.content}
+                                {content}
                             </ReactMarkdown>
                         </div>
                      )}

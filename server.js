@@ -120,7 +120,8 @@ io.on('connection', (socket) => {
       ownerId,
       memberIds: [ownerId],
       channels: [
-        { id: `c-${crypto.randomUUID()}`, name: 'general', type: 'TEXT', description: 'General chat' }
+        { id: `c-${crypto.randomUUID()}`, name: 'general', type: 'TEXT', description: 'General chat' },
+        { id: `vc-${crypto.randomUUID()}`, name: 'General Voice', type: 'VOICE', connectedUserIds: [] }
       ],
       roles: [
           { id: 'role-admin', name: 'Admin', color: '#E74C3C', permissions: ['ADMIN'] }
@@ -203,7 +204,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join_via_invite', ({ code, userId }) => {
-      // Logic to support vanity URL lookup or standard code
       const server = db.servers.find(s => 
           s.invites.some(inv => inv.code === code) || 
           s.vanityUrl === code
@@ -212,7 +212,6 @@ io.on('connection', (socket) => {
       if (server) {
           if (!server.memberIds.includes(userId)) {
               server.memberIds.push(userId);
-              // Track use if it was a standard code
               const invite = server.invites.find(i => i.code === code);
               if (invite) invite.uses++;
               
@@ -276,7 +275,7 @@ io.on('connection', (socket) => {
       }
   });
 
-  // --- STANDARD MESSAGING ---
+  // --- MESSAGING & CHANNELS ---
   socket.on('join_channel', (channelId) => {
     socket.join(channelId);
     const channelMessages = db.messages
@@ -320,7 +319,6 @@ io.on('connection', (socket) => {
     const sender = db.users.find(u => u.id === message.senderId);
     const hydratedMsg = { ...storedMessage, sender: sender || { username: 'Unknown' } };
     
-    // Broadcast to room
     io.to(message.channelId).emit('receive_message', hydratedMsg);
   });
 
@@ -329,7 +327,11 @@ io.on('connection', (socket) => {
     if (server) {
       if (hasPermission(server, userId, 'MANAGE_CHANNELS')) {
         server.channels.push({
-          id: `c-${crypto.randomUUID()}`, name: channelName, type: type || 'TEXT', description: 'New channel'
+          id: `${type === 'VOICE' ? 'vc' : 'c'}-${crypto.randomUUID()}`, 
+          name: channelName, 
+          type: type || 'TEXT', 
+          description: 'New channel',
+          connectedUserIds: [] 
         });
         server.memberIds.forEach(mid => {
            const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
@@ -339,11 +341,79 @@ io.on('connection', (socket) => {
     }
   });
 
+  // --- VOICE CHAT LOGIC ---
+  socket.on('join_voice', ({ serverId, channelId, userId }) => {
+      // Find server
+      const server = db.servers.find(s => s.id === serverId);
+      if (!server) return;
+      
+      // Remove user from any other voice channels in this server (or globally if you want strict enforcement)
+      server.channels.forEach(c => {
+          if (c.type === 'VOICE' && c.connectedUserIds) {
+              c.connectedUserIds = c.connectedUserIds.filter(id => id !== userId);
+          }
+      });
+
+      // Add to new channel
+      const channel = server.channels.find(c => c.id === channelId);
+      if (channel && channel.type === 'VOICE') {
+          if (!channel.connectedUserIds) channel.connectedUserIds = [];
+          channel.connectedUserIds.push(userId);
+          socket.join(channelId); // Join socket room for signaling
+      }
+
+      // Broadcast update
+      server.memberIds.forEach(mid => {
+          const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
+          if (sId) io.to(sId).emit('server_updated', server);
+      });
+  });
+
+  socket.on('leave_voice', ({ serverId, channelId, userId }) => {
+      const server = db.servers.find(s => s.id === serverId);
+      if (!server) return;
+      const channel = server.channels.find(c => c.id === channelId);
+      if (channel && channel.connectedUserIds) {
+          channel.connectedUserIds = channel.connectedUserIds.filter(id => id !== userId);
+          socket.leave(channelId);
+      }
+      server.memberIds.forEach(mid => {
+          const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
+          if (sId) io.to(sId).emit('server_updated', server);
+      });
+  });
+
+  // WebRTC Signaling
+  socket.on('voice_signal', ({ to, from, signal }) => {
+      const targetSocketId = [...socketUserMap.entries()].find(([_, uid]) => uid === to)?.[0];
+      if (targetSocketId) {
+          io.to(targetSocketId).emit('voice_signal', { from, signal });
+      }
+  });
+
+
   socket.on('typing', (data) => socket.to(data.channelId).emit('display_typing', data));
 
   socket.on('disconnect', () => {
     const userId = socketUserMap.get(socket.id);
     if (userId) {
+      // Auto leave voice channels on disconnect
+      db.servers.forEach(server => {
+          let updated = false;
+          server.channels.forEach(c => {
+              if (c.type === 'VOICE' && c.connectedUserIds?.includes(userId)) {
+                  c.connectedUserIds = c.connectedUserIds.filter(id => id !== userId);
+                  updated = true;
+              }
+          });
+          if (updated) {
+              server.memberIds.forEach(mid => {
+                  const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
+                  if (sId) io.to(sId).emit('server_updated', server);
+              });
+          }
+      });
+
       socketUserMap.delete(socket.id);
       const isStillOnline = [...socketUserMap.values()].includes(userId);
       if (!isStillOnline) io.emit('user_status_change', { userId, status: 'offline' });

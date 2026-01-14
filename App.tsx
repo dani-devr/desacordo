@@ -32,6 +32,9 @@ const App: React.FC = () => {
   // Notifications: channelId -> count
   const [notifications, setNotifications] = useState<Record<string, number>>({});
 
+  // Voice State
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string | undefined>(undefined);
+
   const activeServer = servers.find(s => s.id === activeServerId);
   const [currentChannelId, setCurrentChannelId] = useState<string>('');
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
@@ -115,8 +118,9 @@ const App: React.FC = () => {
             : cId === newMessage.channelId;
 
         if (!isCurrentChannel && newMessage.senderId !== user.id) {
-            // Check for mention
-            const isMentioned = newMessage.content.includes(`@${user.username}`);
+            // Check for mention safely
+            const content = newMessage.content || "";
+            const isMentioned = content.includes(`@${user.username}`);
             if (isMentioned || newMessage.channelId.includes('_')) { // Mention or DM
                 setNotifications(prev => ({
                     ...prev,
@@ -173,7 +177,10 @@ const App: React.FC = () => {
   useEffect(() => {
     if (activeServerId !== 'HOME' && activeServer) {
        const exists = activeServer.channels.find(c => c.id === currentChannelId);
-       if (!exists && activeServer.channels.length > 0) handleSwitchChannel(activeServer.channels[0].id);
+       if (!exists && activeServer.channels.length > 0) {
+           const firstText = activeServer.channels.find(c => c.type === 'TEXT') || activeServer.channels[0];
+           handleSwitchChannel(firstText.id);
+       }
        else if (exists) handleSwitchChannel(exists.id);
     }
   }, [activeServerId, activeServer]);
@@ -207,6 +214,22 @@ const App: React.FC = () => {
     socketService.sendMessage(newMessage);
   }, [user, activeServerId, activeDmId, currentChannelId, activeServer]);
 
+  // Voice Handlers
+  const handleJoinVoice = (channel: Channel) => {
+      if (!user || !activeServerId) return;
+      if (activeVoiceChannelId) {
+          socketService.leaveVoice(activeServerId, activeVoiceChannelId, user.id);
+      }
+      setActiveVoiceChannelId(channel.id);
+      socketService.joinVoice(activeServerId, channel.id, user.id);
+  };
+
+  const handleLeaveVoice = () => {
+      if (!user || !activeServerId || !activeVoiceChannelId) return;
+      socketService.leaveVoice(activeServerId, activeVoiceChannelId, user.id);
+      setActiveVoiceChannelId(undefined);
+  };
+
   if (!user) return <Auth onLogin={setUser} />;
 
   const activeChannelObj = activeServerId === 'HOME' ? dmChannels.find(c => c.id === activeDmId) : activeServer?.channels.find(c => c.id === currentChannelId);
@@ -238,6 +261,10 @@ const App: React.FC = () => {
         onOpenServerSettings={() => setShowServerSettings(true)}
         onOpenUserSettings={() => setShowUserSettings(true)}
         notifications={notifications}
+        activeVoiceChannelId={activeVoiceChannelId}
+        onJoinVoice={handleJoinVoice}
+        onLeaveVoice={handleLeaveVoice}
+        allUsers={allUsers}
       />
       
       {activeServerId === 'HOME' && !activeDmId ? (
