@@ -4,7 +4,6 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fs from 'fs';
 
 // Fix for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +13,7 @@ const app = express();
 app.use(cors());
 
 // Serve static files from the React build directory (dist)
+// We assume 'dist' is in the same directory as server.js
 const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
@@ -34,8 +34,11 @@ io.on('connection', (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   socket.on('join_server', (user) => {
+    // Remove any existing entry for this socket ID
     connectedUsers = connectedUsers.filter(u => u.socketId !== socket.id);
+    // Add new user
     connectedUsers.push({ ...user, socketId: socket.id });
+    // Broadcast updated list
     io.emit('user_list_update', connectedUsers);
   });
 
@@ -60,16 +63,14 @@ io.on('connection', (socket) => {
 
 // All other GET requests not handled before will return the React app
 app.get('*', (req, res) => {
-  const indexPath = path.join(distPath, 'index.html');
-  
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).send("404 Not Found: The React application build (dist/index.html) was not found. Please ensure the build command 'npm run build' ran successfully.");
-  }
+  res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    if (err) {
+      console.error("Error sending index.html:", err);
+      res.status(500).send("Server Error: Could not serve index.html. Did the build finish successfully?");
+    }
+  });
 });
 
 httpServer.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
-  console.log(`Serving static files from: ${distPath}`);
 });
