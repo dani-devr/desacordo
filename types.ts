@@ -4,13 +4,14 @@ export interface User {
   id: string;
   username: string;
   avatarUrl: string;
-  bannerUrl?: string; // New
-  bio?: string; // New
+  bannerUrl?: string;
+  bio?: string;
   email?: string;
   status?: 'online' | 'offline';
   friendIds?: string[]; 
   isBot?: boolean;
   color?: string;
+  isNitro?: boolean; // New
 }
 
 export interface FriendRequest {
@@ -24,7 +25,7 @@ export interface Role {
   id: string;
   name: string;
   color: string;
-  permissions: string[]; // 'ADMIN', 'MANAGE_SERVER', 'MANAGE_CHANNELS'
+  permissions: string[];
 }
 
 export interface Invite {
@@ -39,6 +40,7 @@ export interface Attachment {
   type: 'image' | 'video' | 'file';
   url: string;
   name: string;
+  size?: number; // New
 }
 
 export interface Message {
@@ -72,10 +74,11 @@ export interface Server {
   name: string;
   iconUrl: string;
   ownerId: string;
-  memberIds: string[]; // Track who is in the server
+  memberIds: string[];
   channels: Channel[];
-  roles: Role[]; // New: Custom roles
-  invites: Invite[]; // New: Active invites
-  boostLevel: number; // New: Boosts
-  userRoles?: Record<string, string[]>; // userId -> roleIds[]
+  roles: Role[];
+  invites: Invite[];
+  boostLevel: number;
+  userRoles?: Record<string, string[]>;
+  vanityUrl?: string; // New: Custom invite code (e.g. "coolserver")
 }

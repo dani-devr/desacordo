@@ -12,6 +12,7 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'ROLES' | 'INVITES' | 'BOOST'>('OVERVIEW');
   const [name, setName] = useState(server.name);
   const [icon, setIcon] = useState(server.iconUrl);
+  const [vanityUrl, setVanityUrl] = useState(server.vanityUrl || '');
   const [invites, setInvites] = useState<Invite[]>(server.invites || []);
   const [roles, setRoles] = useState<Role[]>(server.roles || []);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -29,7 +30,7 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
   }, [server.roles]);
 
   const handleSaveOverview = () => {
-    socketService.updateServerSettings(server.id, currentUser.id, { name, iconUrl: icon });
+    socketService.updateServerSettings(server.id, currentUser.id, { name, iconUrl: icon, vanityUrl });
     onClose();
   };
 
@@ -113,9 +114,26 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
                         <div onClick={() => fileInputRef.current?.click()} className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer rounded-full text-white text-xs font-bold">CHANGE</div>
                         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                     </div>
-                    <div className="flex-1">
-                        <label className="block text-[#b5bac1] text-xs font-bold uppercase mb-2">Server Name</label>
-                        <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-[#1e1f22] text-white p-2.5 rounded outline-none" />
+                    <div className="flex-1 space-y-4">
+                        <div>
+                            <label className="block text-[#b5bac1] text-xs font-bold uppercase mb-2">Server Name</label>
+                            <input value={name} onChange={e => setName(e.target.value)} className="w-full bg-[#1e1f22] text-white p-2.5 rounded outline-none" />
+                        </div>
+                        
+                        {server.boostLevel >= 3 && (
+                            <div className="p-4 bg-gradient-to-r from-[#b473f5] to-[#f47fff] rounded-lg">
+                                <label className="block text-white text-xs font-bold uppercase mb-2">Vanity URL (Level 3 Unlocked)</label>
+                                <div className="flex items-center">
+                                    <span className="text-white/80 mr-2">desacordo.onrender.com/invite/</span>
+                                    <input 
+                                        value={vanityUrl} 
+                                        onChange={e => setVanityUrl(e.target.value)} 
+                                        className="bg-black/20 text-white p-2 rounded outline-none flex-1 placeholder-white/50" 
+                                        placeholder="cool-server"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                  </div>
                  <button onClick={handleSaveOverview} className="bg-[#23a559] text-white px-6 py-2.5 rounded font-medium hover:bg-[#1a7f44]">Save Changes</button>
@@ -164,6 +182,15 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
                     <h1 className="text-xl font-bold text-white">Invites</h1>
                     <button onClick={handleGenerateInvite} className="bg-[#5865F2] text-white px-3 py-1.5 rounded text-sm">Generate Code</button>
                  </div>
+                 {server.vanityUrl && (
+                     <div className="mb-4 bg-[#2b2d31] p-3 rounded flex items-center justify-between border border-[#f47fff]">
+                         <div className="flex flex-col">
+                             <span className="text-[#f47fff] text-xs font-bold uppercase mb-1">Vanity URL</span>
+                             <span className="text-white font-mono">https://desacordo.onrender.com/invite/{server.vanityUrl}</span>
+                         </div>
+                         <button onClick={() => navigator.clipboard.writeText(`https://desacordo.onrender.com/invite/${server.vanityUrl}`)} className="text-[#f47fff] text-sm hover:underline">Copy</button>
+                     </div>
+                 )}
                  <div className="space-y-1">
                      {invites.length === 0 && <p className="text-[#b5bac1]">No active invites.</p>}
                      {invites.map(inv => (
@@ -188,9 +215,24 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
                  </div>
                  <h1 className="text-2xl font-bold text-white mb-2">Boost this Server</h1>
                  <p className="text-[#b5bac1] mb-8">
-                     Unlock perks for everyone by boosting this server. Current Level: <span className="text-white font-bold">{server.boostLevel}</span>
+                     Unlock perks like <span className="text-white font-bold">Vanity URLs (Level 3)</span> by boosting. <br/>Current Level: <span className="text-white font-bold">{server.boostLevel}</span>
                  </p>
                  
+                 <div className="grid grid-cols-3 gap-4 mb-8 text-left">
+                     <div className={`p-4 rounded border ${server.boostLevel >= 1 ? 'border-[#f47fff] bg-[#f47fff]/10' : 'border-[#2b2d31] bg-[#2b2d31]'}`}>
+                         <div className="font-bold text-white mb-1">Level 1</div>
+                         <div className="text-xs text-[#b5bac1]">More Emoji Slots</div>
+                     </div>
+                     <div className={`p-4 rounded border ${server.boostLevel >= 2 ? 'border-[#f47fff] bg-[#f47fff]/10' : 'border-[#2b2d31] bg-[#2b2d31]'}`}>
+                         <div className="font-bold text-white mb-1">Level 2</div>
+                         <div className="text-xs text-[#b5bac1]">Better Audio</div>
+                     </div>
+                     <div className={`p-4 rounded border ${server.boostLevel >= 3 ? 'border-[#f47fff] bg-[#f47fff]/10' : 'border-[#2b2d31] bg-[#2b2d31]'}`}>
+                         <div className="font-bold text-white mb-1">Level 3</div>
+                         <div className="text-xs text-[#b5bac1]">Vanity URL</div>
+                     </div>
+                 </div>
+
                  <button 
                     onClick={handleBoost} 
                     className="bg-[#f47fff] hover:bg-[#d856e2] text-white font-bold px-8 py-3 rounded-full transition-colors flex items-center justify-center mx-auto"

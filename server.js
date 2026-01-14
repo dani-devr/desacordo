@@ -140,7 +140,8 @@ io.on('connection', (socket) => {
      if (hasPermission(server, userId, 'MANAGE_SERVER')) {
          if (updates.name) server.name = updates.name;
          if (updates.iconUrl) server.iconUrl = updates.iconUrl;
-         if (updates.roles) server.roles = updates.roles; // Allow updating roles array (permissions)
+         if (updates.roles) server.roles = updates.roles;
+         if (updates.vanityUrl && server.boostLevel >= 3) server.vanityUrl = updates.vanityUrl;
          
          server.memberIds.forEach(mid => {
              const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
@@ -202,10 +203,16 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join_via_invite', ({ code, userId }) => {
-      const server = db.servers.find(s => s.invites.some(inv => inv.code === code));
+      // Logic to support vanity URL lookup or standard code
+      const server = db.servers.find(s => 
+          s.invites.some(inv => inv.code === code) || 
+          s.vanityUrl === code
+      );
+      
       if (server) {
           if (!server.memberIds.includes(userId)) {
               server.memberIds.push(userId);
+              // Track use if it was a standard code
               const invite = server.invites.find(i => i.code === code);
               if (invite) invite.uses++;
               
@@ -226,6 +233,7 @@ io.on('connection', (socket) => {
           if (updates.avatarUrl) user.avatarUrl = updates.avatarUrl;
           if (updates.bannerUrl) user.bannerUrl = updates.bannerUrl;
           if (updates.bio) user.bio = updates.bio;
+          if (updates.isNitro !== undefined) user.isNitro = updates.isNitro;
 
           const { password, ...safeUser } = user;
           const isOnline = [...socketUserMap.values()].includes(userId);
@@ -311,6 +319,8 @@ io.on('connection', (socket) => {
 
     const sender = db.users.find(u => u.id === message.senderId);
     const hydratedMsg = { ...storedMessage, sender: sender || { username: 'Unknown' } };
+    
+    // Broadcast to room
     io.to(message.channelId).emit('receive_message', hydratedMsg);
   });
 

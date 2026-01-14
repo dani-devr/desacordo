@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ServerSidebar from './components/ServerSidebar';
 import ChannelSidebar from './components/ChannelSidebar';
 import ChatArea from './components/ChatArea';
@@ -29,11 +29,44 @@ const App: React.FC = () => {
   // Friend State
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
 
+  // Notifications: channelId -> count
+  const [notifications, setNotifications] = useState<Record<string, number>>({});
+
   const activeServer = servers.find(s => s.id === activeServerId);
   const [currentChannelId, setCurrentChannelId] = useState<string>('');
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [isSomeoneTyping, setIsSomeoneTyping] = useState(false);
   const [typingUser, setTypingUser] = useState<User | undefined>(undefined);
+
+  // Refs for tracking current view state inside callbacks
+  const activeServerIdRef = useRef(activeServerId);
+  const activeDmIdRef = useRef(activeDmId);
+  const currentChannelIdRef = useRef(currentChannelId);
+
+  useEffect(() => { activeServerIdRef.current = activeServerId; }, [activeServerId]);
+  useEffect(() => { activeDmIdRef.current = activeDmId; }, [activeDmId]);
+  useEffect(() => { currentChannelIdRef.current = currentChannelId; }, [currentChannelId]);
+
+  // --- PERSISTENCE ---
+  useEffect(() => {
+    const savedUser = localStorage.getItem('discordia_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setUser(parsed);
+      } catch (e) {
+        localStorage.removeItem('discordia_user');
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('discordia_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('discordia_user');
+    }
+  }, [user]);
 
   // --- CONNECT & SYNC ---
   useEffect(() => {
@@ -55,7 +88,6 @@ const App: React.FC = () => {
       
       socketService.onUserUpdated((updatedUser) => {
         setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-        // Important: Update local user state if it's me!
         if (updatedUser.id === user.id) {
             setUser(prev => prev ? { ...prev, ...updatedUser } : updatedUser);
         }
@@ -70,19 +102,41 @@ const App: React.FC = () => {
 
       socketService.onUserStatusChange(({ userId, status }) => setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, status } : u)));
 
-      socketService.onReceiveMessage((newMessage) => setMessages(prev => ({ ...prev, [newMessage.channelId]: [...(prev[newMessage.channelId] || []), newMessage] })));
+      socketService.onReceiveMessage((newMessage) => {
+        setMessages(prev => ({ ...prev, [newMessage.channelId]: [...(prev[newMessage.channelId] || []), newMessage] }));
+        
+        // Handle Notification - Use Refs to get current state
+        const sId = activeServerIdRef.current;
+        const dId = activeDmIdRef.current;
+        const cId = currentChannelIdRef.current;
+
+        const isCurrentChannel = sId === 'HOME' 
+            ? dId === newMessage.channelId 
+            : cId === newMessage.channelId;
+
+        if (!isCurrentChannel && newMessage.senderId !== user.id) {
+            // Check for mention
+            const isMentioned = newMessage.content.includes(`@${user.username}`);
+            if (isMentioned || newMessage.channelId.includes('_')) { // Mention or DM
+                setNotifications(prev => ({
+                    ...prev,
+                    [newMessage.channelId]: (prev[newMessage.channelId] || 0) + 1
+                }));
+            }
+        }
+      });
+      
       socketService.onChannelHistory(({ channelId, messages: history }) => setMessages(prev => ({ ...prev, [channelId]: history })));
 
       socketService.onSyncFriendRequests(setFriendRequests);
       socketService.onNewFriendRequest((req) => setFriendRequests(prev => [...prev, req]));
       socketService.onFriendListUpdated((ids) => {
-          // Update local user object friends
           setUser(prev => prev ? { ...prev, friendIds: ids } : null);
           setFriendRequests(prev => prev.filter(r => !(ids.includes(r.fromUserId) || ids.includes(r.toUserId))));
       });
 
       socketService.onTyping((data) => {
-         const currentId = activeServerId === 'HOME' ? activeDmId : currentChannelId;
+         const currentId = activeServerIdRef.current === 'HOME' ? activeDmIdRef.current : currentChannelIdRef.current;
          if (data.channelId === currentId) {
              const tUser = allUsers.find(u => u.username === data.username);
              setTypingUser(tUser); setIsSomeoneTyping(true);
@@ -93,13 +147,27 @@ const App: React.FC = () => {
 
       return () => { socketService.disconnect(); };
     }
-  }, [user?.id]); // Only re-run if ID changes, usually once
+  }, [user?.id]); 
 
   // --- ACTIONS ---
   const handleSwitchChannel = (channelId: string) => {
-    if (activeServerId === 'HOME') setActiveDmId(channelId);
-    else setCurrentChannelId(channelId);
+    if (activeServerId === 'HOME') {
+        setActiveDmId(channelId);
+    } else {
+        setCurrentChannelId(channelId);
+    }
+    // Clear notifications
+    setNotifications(prev => {
+        const n = { ...prev };
+        delete n[channelId];
+        return n;
+    });
     socketService.joinChannel(channelId);
+  };
+
+  const handleSelectHome = () => {
+      setActiveServerId('HOME');
+      setActiveDmId(''); // Clears DM selection to show FriendList
   };
 
   useEffect(() => {
@@ -117,8 +185,8 @@ const App: React.FC = () => {
     if (!existing) {
       setDmChannels(prev => [{ id: channelId, name: targetUser.username, type: ChannelType.DM, recipientId: targetUser.id }, ...prev]);
     }
-    setActiveServerId('HOME'); setActiveDmId(channelId);
-    socketService.joinChannel(channelId);
+    setActiveServerId('HOME'); 
+    handleSwitchChannel(channelId);
   };
 
   const handleCreateServer = (data: any) => {
@@ -144,6 +212,11 @@ const App: React.FC = () => {
   const activeChannelObj = activeServerId === 'HOME' ? dmChannels.find(c => c.id === activeDmId) : activeServer?.channels.find(c => c.id === currentChannelId);
   const friends = allUsers.filter(u => user.friendIds?.includes(u.id));
 
+  // Determine potential ping targets for the current channel
+  const mentionableUsers = activeServerId === 'HOME' 
+    ? allUsers // DMs: can mention anyone basically, or restrict to friends
+    : allUsers.filter(u => activeServer?.memberIds.includes(u.id));
+
   return (
     <div className="flex h-screen bg-[#313338] overflow-hidden text-[#dbdee1]">
       <ServerSidebar 
@@ -151,7 +224,8 @@ const App: React.FC = () => {
         activeServerId={activeServerId}
         onSelectServer={(s) => setActiveServerId(s.id)}
         onAddServer={() => setShowCreateServer(true)}
-        onSelectHome={() => setActiveServerId('HOME')}
+        onSelectHome={handleSelectHome}
+        notifications={notifications}
       />
       
       <ChannelSidebar 
@@ -163,6 +237,7 @@ const App: React.FC = () => {
         dmChannels={dmChannels}
         onOpenServerSettings={() => setShowServerSettings(true)}
         onOpenUserSettings={() => setShowUserSettings(true)}
+        notifications={notifications}
       />
       
       {activeServerId === 'HOME' && !activeDmId ? (
@@ -181,6 +256,8 @@ const App: React.FC = () => {
           isTyping={isSomeoneTyping}
           typingUser={typingUser}
           onUserClick={(u) => setSelectedUser(u)}
+          mentionableUsers={mentionableUsers}
+          currentUser={user}
         />
       ) : (
         <div className="flex-1 bg-[#313338]" />
@@ -196,7 +273,12 @@ const App: React.FC = () => {
                <img src={u.avatarUrl} className={`w-8 h-8 rounded-full ${u.status === 'offline' ? 'opacity-50' : ''}`} />
                <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[#2b2d31] rounded-full ${u.status === 'online' ? 'bg-green-500' : 'bg-gray-500'}`}></div>
              </div>
-             <div><div className={`font-medium text-sm ${u.status === 'offline' ? 'text-[#949ba4]' : 'text-white'}`}>{u.username}</div></div>
+             <div>
+                 <div className={`font-medium text-sm ${u.status === 'offline' ? 'text-[#949ba4]' : 'text-white'}`}>
+                    {u.username}
+                    {u.isNitro && <span className="ml-1 text-[#f47fff] text-[10px]">♦</span>}
+                 </div>
+             </div>
           </div>
          ))}
         </div>

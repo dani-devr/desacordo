@@ -84,6 +84,16 @@ const UserProfileModal: React.FC<Props> = ({ user, currentUser, onClose, server,
                  </h2>
                  <p className="text-[#b5bac1] text-sm mt-1">{user.username}</p>
                  
+                 {/* Badges */}
+                 {user.isNitro && (
+                     <div className="mt-2 flex">
+                         <div className="bg-[#2b2d31] p-1.5 rounded flex items-center justify-center cursor-help" title="Nitro Subscriber">
+                              <img src="https://assets-global.website-files.com/6257adef93867e56f84d3092/636e0a6918e57475a843f59f_icon_clyde_white_RGB.png" className="w-5 h-5 hidden" />
+                              <span className="text-[#f47fff] text-lg leading-none">♦</span>
+                         </div>
+                     </div>
+                 )}
+
                  <div className="w-full h-[1px] bg-[#2f3136] my-4" />
 
                  <h3 className="text-[#b5bac1] text-xs font-bold uppercase mb-2">About Me</h3>

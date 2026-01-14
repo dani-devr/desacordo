@@ -11,6 +11,7 @@ interface ChannelSidebarProps {
   dmChannels: Channel[];
   onOpenServerSettings: () => void;
   onOpenUserSettings: () => void;
+  notifications: Record<string, number>;
 }
 
 const ChannelSidebar: React.FC<ChannelSidebarProps> = ({ 
@@ -21,7 +22,8 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   isHome,
   dmChannels,
   onOpenServerSettings,
-  onOpenUserSettings
+  onOpenUserSettings,
+  notifications
 }) => {
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
@@ -80,25 +82,31 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                   No active conversations.
                 </div>
               )}
-              {dmChannels.map(dm => (
-                <button
-                  key={dm.id}
-                  onClick={() => onSelectChannel(dm)}
-                  className={`w-full flex items-center px-2 py-2 rounded mx-1 group transition-colors ${
-                    currentChannel.id === dm.id ? 'bg-[#404249] text-white' : 'text-[#949BA4] hover:bg-[#35373c] hover:text-[#dbdee1]'
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center mr-2 text-white font-bold text-xs shrink-0">
-                    {dm.name.substring(0,2).toUpperCase()}
-                  </div>
-                  <span className={`font-medium truncate ${currentChannel.id === dm.id ? 'text-white' : ''}`}>
-                    {dm.name}
-                  </span>
-                  <button className="ml-auto opacity-0 group-hover:opacity-100 text-[#b5bac1] hover:text-white">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              {dmChannels.map(dm => {
+                const notif = notifications[dm.id] || 0;
+                return (
+                  <button
+                    key={dm.id}
+                    onClick={() => onSelectChannel(dm)}
+                    className={`w-full flex items-center px-2 py-2 rounded mx-1 group transition-colors relative ${
+                      currentChannel.id === dm.id ? 'bg-[#404249] text-white' : 'text-[#949BA4] hover:bg-[#35373c] hover:text-[#dbdee1]'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center mr-2 text-white font-bold text-xs shrink-0">
+                      {dm.name.substring(0,2).toUpperCase()}
+                    </div>
+                    <span className={`font-medium truncate ${currentChannel.id === dm.id || notif > 0 ? 'text-white' : ''} ${notif > 0 ? 'font-bold' : ''}`}>
+                      {dm.name}
+                    </span>
+                    {notif > 0 && (
+                        <div className="ml-auto bg-[#f23f42] text-white text-[10px] font-bold px-1.5 rounded-full">{notif}</div>
+                    )}
+                    <button className="ml-auto opacity-0 group-hover:opacity-100 text-[#b5bac1] hover:text-white" onClick={e => e.stopPropagation()}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </button>
                   </button>
-                </button>
-              ))}
+                );
+              })}
            </>
         ) : (
           <>
@@ -131,22 +139,28 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                  </form>
              )}
 
-             {server?.channels.map((channel) => (
-              <button
-                key={channel.id}
-                onClick={() => onSelectChannel(channel)}
-                className={`w-full flex items-center px-2 py-1.5 rounded mx-1 group transition-colors ${
-                  currentChannel.id === channel.id
-                    ? 'bg-[#404249] text-white'
-                    : 'text-[#949BA4] hover:bg-[#35373c] hover:text-[#dbdee1]'
-                }`}
-              >
-                <div className="text-xl mr-1.5 text-[#80848E] font-light">#</div>
-                <span className={`font-medium truncate ${currentChannel.id === channel.id ? 'text-white' : ''}`}>
-                  {channel.name}
-                </span>
-              </button>
-            ))}
+             {server?.channels.map((channel) => {
+              const notif = notifications[channel.id] || 0;
+              return (
+                <button
+                  key={channel.id}
+                  onClick={() => onSelectChannel(channel)}
+                  className={`w-full flex items-center px-2 py-1.5 rounded mx-1 group transition-colors ${
+                    currentChannel.id === channel.id
+                      ? 'bg-[#404249] text-white'
+                      : 'text-[#949BA4] hover:bg-[#35373c] hover:text-[#dbdee1]'
+                  }`}
+                >
+                  <div className="text-xl mr-1.5 text-[#80848E] font-light">#</div>
+                  <span className={`font-medium truncate ${currentChannel.id === channel.id || notif > 0 ? 'text-white' : ''} ${notif > 0 ? 'font-bold' : ''}`}>
+                    {channel.name}
+                  </span>
+                  {notif > 0 && (
+                      <div className="ml-auto w-2 h-2 rounded-full bg-white"></div>
+                  )}
+                </button>
+              );
+            })}
           </>
         )}
       </div>
@@ -162,7 +176,10 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[#232428] rounded-full ${currentUser.status === 'offline' ? 'bg-gray-500' : 'bg-green-500'}`}></div>
         </div>
         <div className="flex-1 min-w-0 mr-1 cursor-pointer" onClick={onOpenUserSettings}>
-          <div className="text-white text-sm font-medium truncate hover:underline">{currentUser.username}</div>
+          <div className="text-white text-sm font-medium truncate hover:underline flex items-center">
+              {currentUser.username}
+              {currentUser.isNitro && <span className="ml-1 text-[#f47fff] text-[10px]">♦</span>}
+          </div>
           <div className="text-[#b5bac1] text-xs truncate">#{currentUser.id.substring(0,4)}</div>
         </div>
         <div className="flex">

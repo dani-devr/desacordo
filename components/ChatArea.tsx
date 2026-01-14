@@ -11,7 +11,26 @@ interface ChatAreaProps {
   isTyping: boolean;
   typingUser?: User;
   onUserClick?: (user: User) => void;
+  mentionableUsers: User[];
+  currentUser: User;
 }
+
+const LinkEmbed = ({ url }: { url: string }) => {
+    let domain = '';
+    try {
+        domain = new URL(url).hostname;
+    } catch (e) {
+        return null;
+    }
+    
+    return (
+        <div className="mt-2 bg-[#2b2d31] border-l-4 border-[#313338] rounded p-3 max-w-md">
+            <div className="text-[#b5bac1] text-xs uppercase font-bold">{domain}</div>
+            <a href={url} target="_blank" rel="noopener noreferrer" className="text-[#00A8FC] hover:underline font-medium block truncate">{url}</a>
+            <div className="text-[#dbdee1] text-sm mt-1">External Link detected. Be careful.</div>
+        </div>
+    );
+};
 
 const ChatArea: React.FC<ChatAreaProps> = ({ 
   channel, 
@@ -19,12 +38,18 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   onSendMessage, 
   isTyping,
   typingUser,
-  onUserClick
+  onUserClick,
+  mentionableUsers,
+  currentUser
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
+  const [showMentionPopup, setShowMentionPopup] = useState(false);
+  
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'auto' });
@@ -33,12 +58,41 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if(showMentionPopup && mentionFilter) {
+          // Select first mention if enter is pressed while popup is open
+          const filtered = mentionableUsers.filter(u => u.username.toLowerCase().startsWith(mentionFilter.toLowerCase()));
+          if (filtered.length > 0) insertMention(filtered[0]);
+          return;
+      }
       if (inputValue.trim()) {
         onSendMessage(inputValue);
         setInputValue('');
         setShowEmojiPicker(false);
+        setShowMentionPopup(false);
       }
     }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      setInputValue(val);
+
+      // Simple mention detection
+      const lastWord = val.split(' ').pop();
+      if (lastWord && lastWord.startsWith('@') && lastWord.length > 1) {
+          setMentionFilter(lastWord.slice(1));
+          setShowMentionPopup(true);
+      } else {
+          setShowMentionPopup(false);
+      }
+  };
+
+  const insertMention = (user: User) => {
+      const words = inputValue.split(' ');
+      words.pop(); // Remove the partial @mention
+      setInputValue(words.join(' ') + ` @${user.username} `);
+      setShowMentionPopup(false);
+      inputRef.current?.focus();
   };
 
   const handleEmojiClick = (emojiData: EmojiClickData) => {
@@ -49,13 +103,14 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Convert to Base64 (Simulating upload for this environment)
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = reader.result as string;
-      const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file';
+      // Determine simplified type
+      let type: 'image' | 'video' | 'file' = 'file';
+      if (file.type.startsWith('image/')) type = 'image';
+      else if (file.type.startsWith('video/')) type = 'video';
       
-      // Auto-send for now
       onSendMessage("", [{
         id: crypto.randomUUID(),
         type,
@@ -64,8 +119,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       }]);
     };
     reader.readAsDataURL(file);
-    
-    // Reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -74,14 +127,17 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     if (isNaN(d.getTime())) return '';
     const today = new Date();
     const isToday = d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
-    
-    if (isToday) {
-      return `Today at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    }
+    if (isToday) return `Today at ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     return d.toLocaleDateString([], { month: '2-digit', day: '2-digit', year: 'numeric' });
   };
 
-  // Components for Markdown to handle mentions
+  const extractLinks = (text: string) => {
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      const matches = text.match(urlRegex);
+      return matches || [];
+  };
+
+  // Components for Markdown
   const renderComponents = {
     p: ({children}: any) => {
         const content = React.Children.toArray(children);
@@ -93,7 +149,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         const parts = child.split(/(@\w+)/g);
                         return parts.map((part, j) => {
                             if (part.startsWith('@')) {
-                                return <span key={j} className="bg-[#414652] text-[#c9cdfb] font-medium px-0.5 rounded cursor-pointer hover:bg-[#5865F2] hover:text-white transition-colors">{part}</span>;
+                                const username = part.substring(1);
+                                const isMe = username === currentUser.username;
+                                return <span key={j} className={`${isMe ? 'bg-[#504514] text-[#f0b132] hover:bg-[#504514]' : 'bg-[#414652] text-[#c9cdfb] hover:bg-[#5865F2] hover:text-white'} font-medium px-0.5 rounded cursor-pointer transition-colors`}>{part}</span>;
                             }
                             return part;
                         });
@@ -142,10 +200,13 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             prevMsg.senderId === sender.id && 
             (msgDate.getTime() - prevMsgDate.getTime() < 5 * 60 * 1000);
 
+          const links = extractLinks(msg.content);
+          const isMentioningMe = msg.content.includes(`@${currentUser.username}`);
+
           return (
             <div 
               key={msg.id} 
-              className={`group flex pr-4 hover:bg-[#2e3035]/60 -mx-4 px-4 relative ${isGrouped ? 'py-0.5' : 'mt-[17px] py-0.5'}`}
+              className={`group flex pr-4 hover:bg-[#2e3035]/60 -mx-4 px-4 relative ${isGrouped ? 'py-0.5' : 'mt-[17px] py-0.5'} ${isMentioningMe ? 'bg-[#504514]/30 hover:bg-[#504514]/50 border-l-2 border-[#f0b132]' : ''}`}
             >
               {!isGrouped ? (
                 <>
@@ -156,6 +217,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     <div className="flex items-center">
                       <span onClick={() => onUserClick?.(sender)} className="font-medium text-white hover:underline cursor-pointer mr-2">{sender.username}</span>
                       {sender.isBot && <span className="bg-[#5865F2] text-white text-[10px] px-1.5 rounded uppercase font-bold flex items-center h-[15px] mt-[1px]">Bot</span>}
+                      {sender.isNitro && <span className="ml-1 text-[#f47fff] text-xs cursor-help" title="Nitro Subscriber">♦</span>}
                       <span className="text-xs text-[#949BA4] ml-2 font-medium">{formatTime(msg.timestamp)}</span>
                     </div>
                     {/* Attachments */}
@@ -166,6 +228,20 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                             )}
                             {att.type === 'video' && (
                                 <video src={att.url} controls className="max-w-full max-h-[300px] rounded-lg" />
+                            )}
+                            {att.type === 'file' && (
+                                <div className="bg-[#2b2d31] p-3 rounded flex items-center max-w-sm border border-[#313338]">
+                                    <div className="mr-3 text-[#dbdee1]">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[#00A8FC] font-medium truncate">{att.name}</div>
+                                        <div className="text-[#949BA4] text-xs">Unknown Size</div>
+                                    </div>
+                                    <a href={att.url} download={att.name} className="ml-3 text-[#b5bac1] hover:text-white">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                                    </a>
+                                </div>
                             )}
                         </div>
                     ))}
@@ -180,6 +256,8 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                         </ReactMarkdown>
                         </div>
                     )}
+                    {/* Link Embeds */}
+                    {links.map((link, i) => <LinkEmbed key={i} url={link} />)}
                   </div>
                 </>
               ) : (
@@ -191,8 +269,14 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                      {/* Attachments Grouped */}
                     {msg.attachments?.map(att => (
                         <div key={att.id} className="mt-1 mb-1">
-                            {att.type === 'image' && <img src={att.url} alt={att.name} className="max-w-full max-h-[300px] rounded-lg border border-[#2b2d31]" />}
-                            {att.type === 'video' && <video src={att.url} controls className="max-w-full max-h-[300px] rounded-lg" />}
+                             {att.type === 'image' && <img src={att.url} alt={att.name} className="max-w-full max-h-[300px] rounded-lg border border-[#2b2d31]" />}
+                             {att.type === 'video' && <video src={att.url} controls className="max-w-full max-h-[300px] rounded-lg" />}
+                             {att.type === 'file' && (
+                                <div className="bg-[#2b2d31] p-3 rounded flex items-center max-w-sm border border-[#313338]">
+                                    <div className="text-[#00A8FC] font-medium truncate flex-1">{att.name}</div>
+                                    <a href={att.url} download={att.name} className="ml-3"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></a>
+                                </div>
+                             )}
                         </div>
                     ))}
                      {msg.content && (
@@ -205,6 +289,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                             </ReactMarkdown>
                         </div>
                      )}
+                     {links.map((link, i) => <LinkEmbed key={i} url={link} />)}
                   </div>
                 </>
               )}
@@ -223,6 +308,24 @@ const ChatArea: React.FC<ChatAreaProps> = ({
 
       {/* Input */}
       <div className="px-4 pb-6 flex-shrink-0 z-10 relative">
+        {showMentionPopup && (
+            <div className="absolute bottom-[70px] left-4 bg-[#2b2d31] rounded-lg shadow-xl w-64 border border-[#1e1f22] overflow-hidden z-50">
+                <div className="bg-[#1e1f22] px-3 py-1 text-xs text-[#949ba4] font-bold uppercase">Members matching @{mentionFilter}</div>
+                <div className="max-h-48 overflow-y-auto">
+                    {mentionableUsers.filter(u => u.username.toLowerCase().startsWith(mentionFilter.toLowerCase())).map(u => (
+                        <div 
+                            key={u.id} 
+                            onClick={() => insertMention(u)}
+                            className="flex items-center px-3 py-2 hover:bg-[#404249] cursor-pointer"
+                        >
+                            <img src={u.avatarUrl} className="w-6 h-6 rounded-full mr-2"/>
+                            <span className="text-white font-medium">{u.username}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
         <div className="bg-[#383a40] rounded-lg px-4 py-2.5 flex items-center relative">
           
           {/* File Upload Button */}
@@ -236,16 +339,17 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             type="file" 
             ref={fileInputRef} 
             className="hidden" 
-            accept="image/*,video/*"
+            // accept all
             onChange={handleFileChange}
           />
 
           <input
+            ref={inputRef}
             type="text"
             className="bg-transparent flex-1 text-[#dbdee1] placeholder-[#949BA4] outline-none font-medium"
             placeholder={`Message ${channel.type === 'DM' ? '@' : '#'}${channel.name}`}
             value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            onChange={handleChange}
             onKeyDown={handleKeyDown}
           />
           
