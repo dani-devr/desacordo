@@ -4,9 +4,8 @@ import ChannelSidebar from './components/ChannelSidebar';
 import ChatArea from './components/ChatArea';
 import UserSetup from './components/UserSetup';
 import CreateServerModal from './components/CreateServerModal';
-import { User, Channel, Message, Server } from './types';
+import { User, Message, Server } from './types';
 import { DEFAULT_SERVERS, BOT_GENERAL, BOT_DEV, BOT_CASUAL, MOCK_USERS, getInitialMessages } from './constants';
-import { geminiService } from './services/geminiService';
 import { socketService } from './services/socketService';
 
 const App: React.FC = () => {
@@ -23,22 +22,17 @@ const App: React.FC = () => {
 
   // Store messages per channel ID
   const [messages, setMessages] = useState<Record<string, Message[]>>(getInitialMessages());
-  const [isAiTyping, setIsAiTyping] = useState(false);
-  const [typingUser, setTypingUser] = useState<User | undefined>(undefined);
+  
+  // Typing state for real users (placeholder for now as we need robust backend for full typing sync)
+  const [isSomeoneTyping, setIsSomeoneTyping] = useState(false);
 
-  // Helper to get the correct bot for the channel
+  // Helper to get the correct bot for the channel (just for visual sidebar)
   const getCurrentBot = (channelName: string): User => {
     switch (channelName) {
       case 'coding-help': return BOT_DEV;
       case 'random': return BOT_CASUAL;
       default: return BOT_GENERAL;
     }
-  };
-
-  const getHistoryContext = (channelId: string) => {
-    const history = messages[channelId] || [];
-    const recent = history.slice(-10);
-    return recent.map(m => `[${m.sender.username}]: ${m.content}`).join('\n');
   };
 
   // Connect to Socket on User Setup
@@ -55,11 +49,11 @@ const App: React.FC = () => {
       });
 
       socketService.onTyping((data) => {
-         // Simple visual indicator if it's the current channel
          if (data.channelId === currentChannelId) {
-             // In a real app we'd map username to a user object or look it up
-             // For now we just show the bot as typing placeholder or nothing
-             // Implementation for real user typing indicator is complex without full user map
+             // In a full implementation, we would show who is typing.
+             // For now, we just acknowledge the event.
+             setIsSomeoneTyping(true);
+             setTimeout(() => setIsSomeoneTyping(false), 3000);
          }
       });
 
@@ -75,12 +69,6 @@ const App: React.FC = () => {
       socketService.joinChannel(currentChannelId);
     }
   }, [currentChannelId, user]);
-
-  // Re-initialize Gemini when channel changes
-  useEffect(() => {
-    const historyContext = getHistoryContext(currentChannel.id);
-    geminiService.initializeChat(currentChannel.systemInstruction, historyContext);
-  }, [currentChannel]);
 
   const handleServerSelect = (server: Server) => {
     setActiveServerId(server.id);
@@ -104,89 +92,11 @@ const App: React.FC = () => {
       channelId
     };
 
-    // 1. Send to Socket (so other people see it)
+    // Send to Socket (so other people see it and it comes back to us via onReceiveMessage)
+    // Note: If you want instant feedback for the sender, you can add it to state here too,
+    // but the socket 'receive_message' listener will handle it. 
+    // Just ensure the server broadcasts to everyone including sender.
     socketService.sendMessage(newMessage);
-
-    // 2. Add to local state immediately (Optimistic UI)
-    // Note: In a real production app, you might wait for server ack, 
-    // but for chat, optimistic is snappy.
-    // However, since we listen to 'receive_message', we need to make sure we don't duplicate.
-    // The server broadcast usually sends to everyone including sender, OR we filter it.
-    // For this simple implementation, let's assume the server broadcasts to everyone.
-    // So we DON'T add it here manually to avoid duplication, OR we rely on ID checks.
-    // To make it feel instant, we add it, but our socket listener might need a check.
-    // Let's stick to: Socket broadcasts, we listen. 
-    // BUT for instant feel, let's add it, and ensure our ID check in render handles dups or just ignore self-broadcasts in socketService?
-    // Let's Keep it simple: Add locally, but checking if the bot needs to reply is separate.
-    
-    // We actually need to manually add it because socket.io default broadcast usually excludes sender unless coded otherwise.
-    // Our server.js does `io.to(...).emit` which INCLUDES sender.
-    // So we do NOT add it here, we let the socket listener handle it.
-    // EXCEPT: If server is down, user sees nothing. 
-    // Let's add it locally for best UX, and assume our setState logic handles duplicates if any, 
-    // or rely on the server logic I wrote `io.to` which sends to all.
-    // Actually, `io.to(channel).emit` sends to everyone. 
-    // So I will NOT `setMessages` here directly to avoid double message.
-    // Wait, `socket.io-client` usually handles this fast.
-    
-    // HOWEVER: For the AI BOT to work, it needs to be triggered.
-    
-    // Check if Bot should reply
-    const currentBot = getCurrentBot(currentChannel.name);
-    const isBotMentioned = content.includes(`@${currentBot.username}`) || content.includes('@everyone');
-    
-    if (isBotMentioned || currentChannel.name === 'coding-help') {
-       setIsAiTyping(true);
-       setTypingUser(currentBot);
-
-       const botMessageId = crypto.randomUUID();
-       let fullBotResponse = '';
-
-       // Create placeholder for Bot
-       const botMsgPlaceholder: Message = {
-            id: botMessageId,
-            content: '',
-            sender: currentBot,
-            timestamp: new Date(),
-            channelId
-       };
-       
-       // We add placeholder immediately
-       setMessages(prev => ({
-           ...prev,
-           [channelId]: [...(prev[channelId] || []), botMsgPlaceholder]
-       }));
-
-       try {
-           const stream = geminiService.sendMessageStream(content);
-           
-           for await (const chunk of stream) {
-               fullBotResponse += chunk;
-               
-               setMessages(prev => {
-                   const channelMessages = prev[channelId] || [];
-                   const updatedMessages = channelMessages.map(msg => 
-                       msg.id === botMessageId 
-                           ? { ...msg, content: fullBotResponse }
-                           : msg
-                   );
-                   return { ...prev, [channelId]: updatedMessages };
-               });
-           }
-           
-           // After bot finishes, we could optionally emit this bot message to socket 
-           // so OTHER users see the bot response too!
-           // This makes the AI shared.
-           const completedBotMsg = { ...botMsgPlaceholder, content: fullBotResponse };
-           socketService.sendMessage(completedBotMsg);
-
-       } catch (error) {
-           console.error("Error fetching AI response", error);
-       } finally {
-           setIsAiTyping(false);
-           setTypingUser(undefined);
-       }
-    }
 
   }, [user, currentChannel]);
 
@@ -214,8 +124,8 @@ const App: React.FC = () => {
         channel={currentChannel}
         messages={messages[currentChannel.id] || []}
         onSendMessage={handleSendMessage}
-        isTyping={isAiTyping}
-        typingUser={typingUser}
+        isTyping={isSomeoneTyping}
+        typingUser={undefined} // No specific user typing indicator implementation yet
       />
       
       {/* Members Sidebar */}
