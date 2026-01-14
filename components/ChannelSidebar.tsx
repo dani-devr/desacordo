@@ -26,10 +26,19 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
 
+  // Permission Check
+  const canCreateChannel = isHome ? false : server && (
+      server.ownerId === currentUser.id ||
+      server.roles.some(r => 
+        server.userRoles?.[currentUser.id]?.includes(r.id) && 
+        (r.permissions.includes('ADMIN') || r.permissions.includes('MANAGE_CHANNELS'))
+      )
+  );
+
   const handleCreateChannel = (e: React.FormEvent) => {
     e.preventDefault();
     if (newChannelName.trim() && server) {
-        socketService.createChannel(server.id, newChannelName.trim());
+        socketService.createChannel(server.id, newChannelName.trim(), currentUser.id);
         setNewChannelName('');
         setShowCreateChannel(false);
     }
@@ -98,13 +107,15 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                  <svg className="mr-0.5" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
                  Text Channels
                </div>
-               <button 
-                  onClick={() => setShowCreateChannel(true)}
-                  className="text-[#949BA4] hover:text-white"
-                  title="Create Channel"
-               >
-                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
-               </button>
+               {canCreateChannel && (
+                   <button 
+                      onClick={() => setShowCreateChannel(true)}
+                      className="text-[#949BA4] hover:text-white"
+                      title="Create Channel"
+                   >
+                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                   </button>
+               )}
              </div>
 
              {showCreateChannel && (

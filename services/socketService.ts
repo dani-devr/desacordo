@@ -28,11 +28,17 @@ class SocketService {
   public updateServerSettings(serverId: string, userId: string, updates: Partial<Server>) {
       this.socket?.emit('update_server_settings', { serverId, userId, updates });
   }
+  public boostServer(serverId: string, userId: string) {
+      this.socket?.emit('boost_server', { serverId, userId });
+  }
   public createRole(serverId: string, userId: string, role: Partial<Role>) {
       this.socket?.emit('create_role', { serverId, userId, role });
   }
-  public createChannel(serverId: string, channelName: string) { 
-      this.socket?.emit('create_channel', { serverId, channelName, type: 'TEXT' }); 
+  public assignRole(serverId: string, userId: string, targetUserId: string, roleId: string) {
+      this.socket?.emit('assign_role', { serverId, userId, targetUserId, roleId });
+  }
+  public createChannel(serverId: string, channelName: string, userId: string) { 
+      this.socket?.emit('create_channel', { serverId, channelName, type: 'TEXT', userId }); 
   }
   public generateInvite(serverId: string, userId: string) {
       this.socket?.emit('generate_invite', { serverId, userId });

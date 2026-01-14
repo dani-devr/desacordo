@@ -7,9 +7,10 @@ interface Props {
   friends: User[];
   allUsers: User[]; // Used to resolve names for requests
   currentUser: User;
+  onUserClick: (user: User) => void;
 }
 
-const FriendList: React.FC<Props> = ({ friendRequests, friends, allUsers, currentUser }) => {
+const FriendList: React.FC<Props> = ({ friendRequests, friends, allUsers, currentUser, onUserClick }) => {
   const [tab, setTab] = useState<'ONLINE' | 'ALL' | 'PENDING' | 'ADD'>('ONLINE');
   const [addUsername, setAddUsername] = useState('');
   const [addMessage, setAddMessage] = useState('');
@@ -92,7 +93,11 @@ const FriendList: React.FC<Props> = ({ friendRequests, friends, allUsers, curren
                <div>
                    <h2 className="text-[#b5bac1] text-xs font-bold uppercase mb-4">{tab === 'ONLINE' ? 'Online Friends' : 'All Friends'} — {friends.length}</h2>
                    {friends.filter(f => tab === 'ALL' || f.status === 'online').map(f => (
-                       <div key={f.id} className="flex items-center justify-between hover:bg-[#35373c] p-2 rounded group border-t border-[#3f4147] cursor-pointer">
+                       <div 
+                         key={f.id} 
+                         onClick={() => onUserClick(f)}
+                         className="flex items-center justify-between hover:bg-[#35373c] p-2 rounded group border-t border-[#3f4147] cursor-pointer"
+                       >
                            <div className="flex items-center">
                                <div className="relative mr-3">
                                    <img src={f.avatarUrl} className="w-8 h-8 rounded-full" />

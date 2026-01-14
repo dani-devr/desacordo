@@ -9,21 +9,24 @@ interface Props {
 }
 
 const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'ROLES' | 'INVITES'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'ROLES' | 'INVITES' | 'BOOST'>('OVERVIEW');
   const [name, setName] = useState(server.name);
   const [icon, setIcon] = useState(server.iconUrl);
   const [invites, setInvites] = useState<Invite[]>(server.invites || []);
+  const [roles, setRoles] = useState<Role[]>(server.roles || []);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Check permissions (Basic check, real check on backend)
   const canEdit = server.ownerId === currentUser.id; 
-  // In a real app, we would also check roles here for UI feedback
 
   useEffect(() => {
      socketService.onInviteGenerated((invite) => {
          if(invite.serverId === server.id) setInvites(prev => [...prev, invite]);
      });
   }, [server.id]);
+
+  useEffect(() => {
+    setRoles(server.roles || []);
+  }, [server.roles]);
 
   const handleSaveOverview = () => {
     socketService.updateServerSettings(server.id, currentUser.id, { name, iconUrl: icon });
@@ -46,10 +49,26 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
   const handleCreateRole = () => {
       const newRole: Partial<Role> = { name: 'New Role', color: '#99AAB5', permissions: [] };
       socketService.createRole(server.id, currentUser.id, newRole);
-      onClose(); // Close to refresh for now, ideally optimistic update
   };
 
-  if (!canEdit && activeTab === 'OVERVIEW') {
+  const togglePermission = (roleId: string, perm: string) => {
+      const updatedRoles = roles.map(r => {
+          if (r.id !== roleId) return r;
+          const newPerms = r.permissions.includes(perm) 
+             ? r.permissions.filter(p => p !== perm)
+             : [...r.permissions, perm];
+          return { ...r, permissions: newPerms };
+      });
+      setRoles(updatedRoles);
+      // Sync immediately for simplicity, usually explicit save
+      socketService.updateServerSettings(server.id, currentUser.id, { roles: updatedRoles });
+  };
+  
+  const handleBoost = () => {
+      socketService.boostServer(server.id, currentUser.id);
+  };
+
+  if (!canEdit && activeTab !== 'BOOST') {
       return (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
              <div className="bg-[#313338] p-8 rounded text-white text-center">
@@ -67,9 +86,16 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
       <div className="w-[30%] bg-[#2b2d31] flex flex-col items-end py-12 pr-6">
          <div className="w-48">
             <h2 className="text-[#949BA4] text-xs font-bold uppercase mb-2 px-2">{server.name}</h2>
-            <button onClick={() => setActiveTab('OVERVIEW')} className={`w-full text-left px-2 py-1.5 rounded mb-0.5 ${activeTab === 'OVERVIEW' ? 'bg-[#404249] text-white' : 'text-[#b5bac1] hover:bg-[#35373c]'}`}>Overview</button>
-            <button onClick={() => setActiveTab('ROLES')} className={`w-full text-left px-2 py-1.5 rounded mb-0.5 ${activeTab === 'ROLES' ? 'bg-[#404249] text-white' : 'text-[#b5bac1] hover:bg-[#35373c]'}`}>Roles</button>
-            <button onClick={() => setActiveTab('INVITES')} className={`w-full text-left px-2 py-1.5 rounded mb-0.5 ${activeTab === 'INVITES' ? 'bg-[#404249] text-white' : 'text-[#b5bac1] hover:bg-[#35373c]'}`}>Invites</button>
+            {canEdit && (
+                <>
+                    <button onClick={() => setActiveTab('OVERVIEW')} className={`w-full text-left px-2 py-1.5 rounded mb-0.5 ${activeTab === 'OVERVIEW' ? 'bg-[#404249] text-white' : 'text-[#b5bac1] hover:bg-[#35373c]'}`}>Overview</button>
+                    <button onClick={() => setActiveTab('ROLES')} className={`w-full text-left px-2 py-1.5 rounded mb-0.5 ${activeTab === 'ROLES' ? 'bg-[#404249] text-white' : 'text-[#b5bac1] hover:bg-[#35373c]'}`}>Roles</button>
+                    <button onClick={() => setActiveTab('INVITES')} className={`w-full text-left px-2 py-1.5 rounded mb-0.5 ${activeTab === 'INVITES' ? 'bg-[#404249] text-white' : 'text-[#b5bac1] hover:bg-[#35373c]'}`}>Invites</button>
+                </>
+            )}
+            <button onClick={() => setActiveTab('BOOST')} className={`w-full text-left px-2 py-1.5 rounded mb-0.5 ${activeTab === 'BOOST' ? 'bg-[#404249] text-white' : 'text-[#b5bac1] hover:bg-[#35373c]'}`}>
+                <span className="text-[#f47fff]">Server Boost</span>
+            </button>
             
             <div className="h-[1px] bg-[#3f4147] my-2" />
             <button onClick={onClose} className="w-full text-left px-2 py-1.5 rounded text-[#f23f42] hover:bg-[#35373c]">Exit</button>
@@ -102,15 +128,29 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
                     <h1 className="text-xl font-bold text-white">Roles</h1>
                     <button onClick={handleCreateRole} className="bg-[#5865F2] text-white px-3 py-1.5 rounded text-sm">Create Role</button>
                  </div>
-                 <div className="space-y-1">
-                     {server.roles?.map(role => (
-                         <div key={role.id} className="flex items-center justify-between bg-[#2b2d31] p-3 rounded">
-                             <div className="flex items-center">
-                                 <div className="w-3 h-3 rounded-full mr-3" style={{ background: role.color }} />
-                                 <span className="text-white font-medium">{role.name}</span>
+                 <div className="space-y-4">
+                     {roles?.map(role => (
+                         <div key={role.id} className="bg-[#2b2d31] p-4 rounded">
+                             <div className="flex items-center mb-3">
+                                 <div className="w-4 h-4 rounded-full mr-3" style={{ background: role.color }} />
+                                 <input 
+                                    className="bg-transparent text-white font-medium outline-none flex-1"
+                                    value={role.name}
+                                    readOnly // Edit name via full update later if needed
+                                 />
                              </div>
-                             <div className="text-[#b5bac1] text-xs">
-                                 {role.permissions.join(', ') || 'No Permissions'}
+                             <div className="space-y-2">
+                                 {['ADMIN', 'MANAGE_SERVER', 'MANAGE_CHANNELS'].map(perm => (
+                                     <label key={perm} className="flex items-center cursor-pointer">
+                                         <input 
+                                            type="checkbox" 
+                                            checked={role.permissions.includes(perm)}
+                                            onChange={() => togglePermission(role.id, perm)}
+                                            className="form-checkbox h-4 w-4 text-[#5865F2] rounded border-gray-500 bg-[#1e1f22]"
+                                         />
+                                         <span className="ml-2 text-[#b5bac1] text-sm capitalize">{perm.replace('_', ' ')}</span>
+                                     </label>
+                                 ))}
                              </div>
                          </div>
                      ))}
@@ -129,13 +169,35 @@ const ServerSettingsModal: React.FC<Props> = ({ server, currentUser, onClose }) 
                      {invites.map(inv => (
                          <div key={inv.code} className="flex items-center justify-between bg-[#2b2d31] p-3 rounded group">
                              <div className="flex flex-col">
-                                 <span className="text-white font-mono select-all">https://discordia.ai/invite/{inv.code}</span>
+                                 <span className="text-white font-mono select-all">https://desacordo.onrender.com/invite/{inv.code}</span>
                                  <span className="text-[#b5bac1] text-xs">Used {inv.uses} times</span>
                              </div>
-                             <button onClick={() => navigator.clipboard.writeText(`https://discordia.ai/invite/${inv.code}`)} className="text-[#5865F2] text-sm hover:underline">Copy</button>
+                             <button onClick={() => navigator.clipboard.writeText(`https://desacordo.onrender.com/invite/${inv.code}`)} className="text-[#5865F2] text-sm hover:underline">Copy</button>
                          </div>
                      ))}
                  </div>
+             </div>
+         )}
+
+         {activeTab === 'BOOST' && (
+             <div className="max-w-xl text-center pt-8">
+                 <div className="mb-6 flex justify-center">
+                    <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#f47fff] to-[#5865F2] flex items-center justify-center">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="white"><path d="M13 6v5h5V7.75L13 6zm-2 10v-5H6v3.25L11 16zm4.5 1.5l1.25-2.25L19 14l-1-4-4 1 .75 2.25L12.5 15.5 15.5 17.5zM7 10l1 4 4-1-.75-2.25L9 8.5 7 10zm-3 2l1.25 2.25L4 15.5l3.25 2L6 14.25 5 12zm13-5l-1.25-2.25L20 3.5l-3.25-2L18 4.75 19 7z"/></svg>
+                    </div>
+                 </div>
+                 <h1 className="text-2xl font-bold text-white mb-2">Boost this Server</h1>
+                 <p className="text-[#b5bac1] mb-8">
+                     Unlock perks for everyone by boosting this server. Current Level: <span className="text-white font-bold">{server.boostLevel}</span>
+                 </p>
+                 
+                 <button 
+                    onClick={handleBoost} 
+                    className="bg-[#f47fff] hover:bg-[#d856e2] text-white font-bold px-8 py-3 rounded-full transition-colors flex items-center justify-center mx-auto"
+                 >
+                     <svg className="mr-2" width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M4 6V4h16v2H4zm14 14v-2H6v2h12zm-7-3l-4-6h2V7h6v4h2l-4 6h-2z"/></svg>
+                     Boost Server
+                 </button>
              </div>
          )}
       </div>

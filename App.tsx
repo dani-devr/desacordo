@@ -6,6 +6,7 @@ import Auth from './components/Auth';
 import CreateServerModal from './components/CreateServerModal';
 import ServerSettingsModal from './components/ServerSettingsModal';
 import UserSettingsModal from './components/UserSettingsModal';
+import UserProfileModal from './components/UserProfileModal';
 import FriendList from './components/FriendList';
 import { User, Message, Server, Channel, ChannelType, FriendRequest } from './types';
 import { socketService } from './services/socketService';
@@ -17,6 +18,9 @@ const App: React.FC = () => {
   const [showCreateServer, setShowCreateServer] = useState(false);
   const [showServerSettings, setShowServerSettings] = useState(false);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  
+  // Profile Viewer
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   
   const [allUsers, setAllUsers] = useState<User[]>([]); 
   const [dmChannels, setDmChannels] = useState<Channel[]>([]);
@@ -48,7 +52,14 @@ const App: React.FC = () => {
 
       socketService.onSyncUsers((users) => setAllUsers(users));
       socketService.onUserRegistered((newUser) => setAllUsers(prev => prev.find(u => u.id === newUser.id) ? prev : [...prev, newUser]));
-      socketService.onUserUpdated((updatedUser) => setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u)));
+      
+      socketService.onUserUpdated((updatedUser) => {
+        setAllUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+        // Important: Update local user state if it's me!
+        if (updatedUser.id === user.id) {
+            setUser(prev => prev ? { ...prev, ...updatedUser } : updatedUser);
+        }
+      });
       
       socketService.onSyncServers(setServers);
       socketService.onServerJoined((s) => setServers(prev => [...prev, s]));
@@ -82,7 +93,7 @@ const App: React.FC = () => {
 
       return () => { socketService.disconnect(); };
     }
-  }, [user]);
+  }, [user?.id]); // Only re-run if ID changes, usually once
 
   // --- ACTIONS ---
   const handleSwitchChannel = (channelId: string) => {
@@ -160,6 +171,7 @@ const App: React.FC = () => {
              friends={friends}
              allUsers={allUsers}
              currentUser={user}
+             onUserClick={(u) => setSelectedUser(u)}
           />
       ) : activeChannelObj ? (
         <ChatArea 
@@ -168,6 +180,7 @@ const App: React.FC = () => {
           onSendMessage={handleSendMessage}
           isTyping={isSomeoneTyping}
           typingUser={typingUser}
+          onUserClick={(u) => setSelectedUser(u)}
         />
       ) : (
         <div className="flex-1 bg-[#313338]" />
@@ -178,7 +191,7 @@ const App: React.FC = () => {
         <div className="w-60 bg-[#2b2d31] hidden lg:flex flex-col flex-shrink-0 p-3 overflow-y-auto custom-scrollbar">
           <h2 className="text-[#949BA4] text-xs font-bold uppercase tracking-wide mb-2 mt-2 px-2">Members</h2>
           {allUsers.filter(u => activeServer.memberIds?.includes(u.id)).map((u) => (
-             <div key={u.id} className="flex items-center px-2 py-2 rounded hover:bg-[#35373c] cursor-pointer group relative" onClick={() => startDM(u)}>
+             <div key={u.id} className="flex items-center px-2 py-2 rounded hover:bg-[#35373c] cursor-pointer group relative" onClick={() => setSelectedUser(u)}>
              <div className="relative mr-3">
                <img src={u.avatarUrl} className={`w-8 h-8 rounded-full ${u.status === 'offline' ? 'opacity-50' : ''}`} />
                <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[#2b2d31] rounded-full ${u.status === 'online' ? 'bg-green-500' : 'bg-gray-500'}`}></div>
@@ -192,6 +205,15 @@ const App: React.FC = () => {
       {showCreateServer && <CreateServerModal onClose={() => setShowCreateServer(false)} onCreate={handleCreateServer} />}
       {showServerSettings && activeServer && <ServerSettingsModal server={activeServer} currentUser={user} onClose={() => setShowServerSettings(false)} />}
       {showUserSettings && <UserSettingsModal user={user} onClose={() => setShowUserSettings(false)} />}
+      {selectedUser && (
+          <UserProfileModal 
+              user={selectedUser} 
+              currentUser={user} 
+              onClose={() => setSelectedUser(null)} 
+              server={activeServerId !== 'HOME' ? activeServer : undefined}
+              onStartDM={startDM}
+          />
+      )}
     </div>
   );
 };

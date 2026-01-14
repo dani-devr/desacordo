@@ -14,12 +14,11 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // --- IN-MEMORY DATABASE ---
-// No default servers. Clean slate.
 const db = {
   users: [], 
   messages: [], 
   servers: [],
-  friendRequests: [], // { id, fromUserId, toUserId, status }
+  friendRequests: [], 
   openDms: [], 
 };
 
@@ -64,7 +63,6 @@ app.post('/api/login', (req, res) => {
 
 // --- SERVER & INVITE API ---
 app.get('/invite/:code', (req, res) => {
-    // This is just to handle the direct URL load in browser, the App.tsx handles the logic
     res.sendFile(path.join(distPath, 'index.html'));
 });
 
@@ -89,7 +87,6 @@ io.on('connection', (socket) => {
     socket.join('global_status');
     io.emit('user_status_change', { userId: user.id, status: 'online' });
 
-    // Sync Users
     const userList = db.users.map(u => {
       const isOnline = [...socketUserMap.values()].includes(u.id);
       const { password, ...safeUser } = u;
@@ -97,11 +94,9 @@ io.on('connection', (socket) => {
     });
     socket.emit('sync_users', userList);
 
-    // Sync Servers (Only ones the user is a member of)
     const myServers = db.servers.filter(s => s.memberIds.includes(user.id));
     socket.emit('sync_servers', myServers);
 
-    // Sync DMs
     const myDms = db.openDms.filter(d => d.userId === user.id);
     const hydratedDms = myDms.map(dm => {
       const recipient = db.users.find(u => u.id === dm.recipientId);
@@ -111,7 +106,6 @@ io.on('connection', (socket) => {
     });
     socket.emit('sync_dms', hydratedDms);
 
-    // Sync Friend Requests
     const myRequests = db.friendRequests.filter(r => r.toUserId === user.id && r.status === 'pending');
     socket.emit('sync_friend_requests', myRequests);
   });
@@ -136,7 +130,6 @@ io.on('connection', (socket) => {
       boostLevel: 0
     };
     db.servers.push(newServer);
-    // Only send to creator
     socket.emit('server_joined', newServer);
   });
 
@@ -147,8 +140,8 @@ io.on('connection', (socket) => {
      if (hasPermission(server, userId, 'MANAGE_SERVER')) {
          if (updates.name) server.name = updates.name;
          if (updates.iconUrl) server.iconUrl = updates.iconUrl;
+         if (updates.roles) server.roles = updates.roles; // Allow updating roles array (permissions)
          
-         // Broadcast update to all members of this server
          server.memberIds.forEach(mid => {
              const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
              if (sId) io.to(sId).emit('server_updated', server);
@@ -156,11 +149,41 @@ io.on('connection', (socket) => {
      }
   });
 
+  socket.on('boost_server', ({ serverId, userId }) => {
+     const server = db.servers.find(s => s.id === serverId);
+     if (!server) return;
+     server.boostLevel = (server.boostLevel || 0) + 1;
+     server.memberIds.forEach(mid => {
+         const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
+         if (sId) io.to(sId).emit('server_updated', server);
+     });
+  });
+
   socket.on('create_role', ({ serverId, userId, role }) => {
       const server = db.servers.find(s => s.id === serverId);
       if (server && hasPermission(server, userId, 'MANAGE_SERVER')) {
           server.roles.push({ ...role, id: crypto.randomUUID() });
-          // Broadcast
+          server.memberIds.forEach(mid => {
+             const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
+             if (sId) io.to(sId).emit('server_updated', server);
+         });
+      }
+  });
+
+  socket.on('assign_role', ({ serverId, userId, targetUserId, roleId }) => {
+      const server = db.servers.find(s => s.id === serverId);
+      if (server && hasPermission(server, userId, 'MANAGE_SERVER')) {
+          if (!server.userRoles) server.userRoles = {};
+          if (!server.userRoles[targetUserId]) server.userRoles[targetUserId] = [];
+          
+          const hasRole = server.userRoles[targetUserId].includes(roleId);
+          if (hasRole) {
+              server.userRoles[targetUserId] = server.userRoles[targetUserId].filter(r => r !== roleId);
+          } else {
+              server.userRoles[targetUserId].push(roleId);
+          }
+
+          // Broadcast update
           server.memberIds.forEach(mid => {
              const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
              if (sId) io.to(sId).emit('server_updated', server);
@@ -171,7 +194,6 @@ io.on('connection', (socket) => {
   socket.on('generate_invite', ({ serverId, userId }) => {
       const server = db.servers.find(s => s.id === serverId);
       if (server) {
-          // Anyone can invite for now, or check perms
           const code = Math.random().toString(36).substring(2, 7);
           const invite = { code, serverId, creatorId: userId, uses: 0 };
           server.invites.push(invite);
@@ -197,7 +219,6 @@ io.on('connection', (socket) => {
   });
 
   // --- USER PROFILE ---
-
   socket.on('update_profile', ({ userId, updates }) => {
       const user = db.users.find(u => u.id === userId);
       if (user) {
@@ -206,16 +227,13 @@ io.on('connection', (socket) => {
           if (updates.bannerUrl) user.bannerUrl = updates.bannerUrl;
           if (updates.bio) user.bio = updates.bio;
 
-          // Broadcast to everyone
           const { password, ...safeUser } = user;
-          // Determine status
           const isOnline = [...socketUserMap.values()].includes(userId);
           io.emit('user_updated', { ...safeUser, status: isOnline ? 'online' : 'offline' });
       }
   });
 
   // --- FRIENDS ---
-
   socket.on('send_friend_request', ({ fromUserId, toUserId }) => {
       if (fromUserId === toUserId) return;
       const existing = db.friendRequests.find(r => 
@@ -224,11 +242,9 @@ io.on('connection', (socket) => {
       );
       
       const alreadyFriends = db.users.find(u => u.id === fromUserId)?.friendIds.includes(toUserId);
-
       if (!existing && !alreadyFriends) {
           const request = { id: crypto.randomUUID(), fromUserId, toUserId, status: 'pending' };
           db.friendRequests.push(request);
-          
           const recipientSocket = [...socketUserMap.entries()].find(([_, uid]) => uid === toUserId)?.[0];
           if (recipientSocket) io.to(recipientSocket).emit('new_friend_request', request);
       }
@@ -240,15 +256,12 @@ io.on('connection', (socket) => {
           req.status = 'accepted';
           const u1 = db.users.find(u => u.id === req.fromUserId);
           const u2 = db.users.find(u => u.id === req.toUserId);
-          
           if (u1 && u2) {
               if(!u1.friendIds.includes(u2.id)) u1.friendIds.push(u2.id);
               if(!u2.friendIds.includes(u1.id)) u2.friendIds.push(u1.id);
               
-              // Notify both
               const s1 = [...socketUserMap.entries()].find(([_, uid]) => uid === u1.id)?.[0];
               const s2 = [...socketUserMap.entries()].find(([_, uid]) => uid === u2.id)?.[0];
-              
               if (s1) io.to(s1).emit('friend_list_updated', u1.friendIds);
               if (s2) io.to(s2).emit('friend_list_updated', u2.friendIds);
           }
@@ -256,7 +269,6 @@ io.on('connection', (socket) => {
   });
 
   // --- STANDARD MESSAGING ---
-
   socket.on('join_channel', (channelId) => {
     socket.join(channelId);
     const channelMessages = db.messages
@@ -282,11 +294,9 @@ io.on('connection', (socket) => {
     };
     db.messages.push(storedMessage);
 
-    // DM Logic
     if (message.channelId.includes('_') && !message.channelId.includes('server-')) {
        const participants = message.channelId.split('_');
        const u1 = participants[0]; const u2 = participants[1];
-
        [u1, u2].forEach(uid => {
            if (!db.openDms.find(d => d.userId === uid && d.recipientId === (uid === u1 ? u2 : u1))) {
                db.openDms.push({ userId: uid, recipientId: (uid === u1 ? u2 : u1), channelId: message.channelId });
@@ -304,17 +314,18 @@ io.on('connection', (socket) => {
     io.to(message.channelId).emit('receive_message', hydratedMsg);
   });
 
-  socket.on('create_channel', ({ serverId, channelName, type }) => {
+  socket.on('create_channel', ({ serverId, channelName, type, userId }) => {
     const server = db.servers.find(s => s.id === serverId);
     if (server) {
-      server.channels.push({
-        id: `c-${crypto.randomUUID()}`, name: channelName, type: type || 'TEXT', description: 'New channel'
-      });
-      // Update all members
-      server.memberIds.forEach(mid => {
-         const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
-         if (sId) io.to(sId).emit('server_updated', server);
-      });
+      if (hasPermission(server, userId, 'MANAGE_CHANNELS')) {
+        server.channels.push({
+          id: `c-${crypto.randomUUID()}`, name: channelName, type: type || 'TEXT', description: 'New channel'
+        });
+        server.memberIds.forEach(mid => {
+           const sId = [...socketUserMap.entries()].find(([_, uid]) => uid === mid)?.[0];
+           if (sId) io.to(sId).emit('server_updated', server);
+        });
+      }
     }
   });
 

@@ -10,6 +10,7 @@ interface ChatAreaProps {
   onSendMessage: (content: string, attachments?: {id: string, type: 'image'|'video'|'file', url: string, name: string}[]) => void;
   isTyping: boolean;
   typingUser?: User;
+  onUserClick?: (user: User) => void;
 }
 
 const ChatArea: React.FC<ChatAreaProps> = ({ 
@@ -18,6 +19,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   onSendMessage, 
   isTyping,
   typingUser,
+  onUserClick
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -79,6 +81,30 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     return d.toLocaleDateString([], { month: '2-digit', day: '2-digit', year: 'numeric' });
   };
 
+  // Components for Markdown to handle mentions
+  const renderComponents = {
+    p: ({children}: any) => {
+        const content = React.Children.toArray(children);
+        return (
+            <p className="mb-1">
+                {content.map((child: any, i) => {
+                    if (typeof child === 'string') {
+                        // Regex to find @username
+                        const parts = child.split(/(@\w+)/g);
+                        return parts.map((part, j) => {
+                            if (part.startsWith('@')) {
+                                return <span key={j} className="bg-[#414652] text-[#c9cdfb] font-medium px-0.5 rounded cursor-pointer hover:bg-[#5865F2] hover:text-white transition-colors">{part}</span>;
+                            }
+                            return part;
+                        });
+                    }
+                    return child;
+                })}
+            </p>
+        );
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-[#313338] min-w-0 relative h-full">
       {/* Header */}
@@ -123,12 +149,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             >
               {!isGrouped ? (
                 <>
-                  <div className="flex-shrink-0 cursor-pointer mt-0.5">
+                  <div className="flex-shrink-0 cursor-pointer mt-0.5" onClick={() => onUserClick?.(sender)}>
                     <img src={sender.avatarUrl} alt={sender.username} className="w-10 h-10 rounded-full hover:opacity-80 transition-opacity"/>
                   </div>
                   <div className="flex-1 min-w-0 ml-4">
                     <div className="flex items-center">
-                      <span className="font-medium text-white hover:underline cursor-pointer mr-2">{sender.username}</span>
+                      <span onClick={() => onUserClick?.(sender)} className="font-medium text-white hover:underline cursor-pointer mr-2">{sender.username}</span>
                       {sender.isBot && <span className="bg-[#5865F2] text-white text-[10px] px-1.5 rounded uppercase font-bold flex items-center h-[15px] mt-[1px]">Bot</span>}
                       <span className="text-xs text-[#949BA4] ml-2 font-medium">{formatTime(msg.timestamp)}</span>
                     </div>
@@ -146,7 +172,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     {/* Text Content */}
                     {msg.content && (
                         <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        <ReactMarkdown 
+                            remarkPlugins={[remarkGfm]}
+                            components={renderComponents}
+                        >
+                            {msg.content}
+                        </ReactMarkdown>
                         </div>
                     )}
                   </div>
@@ -166,7 +197,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                     ))}
                      {msg.content && (
                          <div className="text-[#dbdee1] markdown-content leading-[1.375rem]">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                            <ReactMarkdown 
+                                remarkPlugins={[remarkGfm]}
+                                components={renderComponents}
+                            >
+                                {msg.content}
+                            </ReactMarkdown>
                         </div>
                      )}
                   </div>
