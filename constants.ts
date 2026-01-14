@@ -40,24 +40,41 @@ export const generateChannels = (serverId: string): Channel[] => [
 
 export const DEFAULT_SERVER_ID = 'server-gemini';
 
+const MOCK_MEMBER_IDS = MOCK_USERS.map(u => u.id);
+
 export const DEFAULT_SERVERS: Server[] = [
   {
     id: DEFAULT_SERVER_ID,
     name: 'Gemini Community',
     iconUrl: 'https://picsum.photos/seed/gemini/100/100',
-    channels: generateChannels(DEFAULT_SERVER_ID)
+    channels: generateChannels(DEFAULT_SERVER_ID),
+    ownerId: MOCK_USERS[0].id,
+    memberIds: MOCK_MEMBER_IDS,
+    roles: [],
+    invites: [],
+    boostLevel: 0
   },
   {
     id: 'server-react',
     name: 'React Developers',
     iconUrl: 'https://picsum.photos/seed/react/100/100',
-    channels: generateChannels('server-react')
+    channels: generateChannels('server-react'),
+    ownerId: MOCK_USERS[1].id,
+    memberIds: MOCK_MEMBER_IDS,
+    roles: [],
+    invites: [],
+    boostLevel: 0
   },
   {
     id: 'server-gaming',
     name: 'Gaming Hub',
     iconUrl: 'https://picsum.photos/seed/gaming/100/100',
-    channels: generateChannels('server-gaming')
+    channels: generateChannels('server-gaming'),
+    ownerId: MOCK_USERS[2].id,
+    memberIds: MOCK_MEMBER_IDS,
+    roles: [],
+    invites: [],
+    boostLevel: 0
   }
 ];
 

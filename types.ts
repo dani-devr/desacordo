@@ -4,11 +4,34 @@ export interface User {
   id: string;
   username: string;
   avatarUrl: string;
-  isBot?: boolean;
-  color?: string;
+  bannerUrl?: string; // New
+  bio?: string; // New
   email?: string;
   status?: 'online' | 'offline';
-  friendIds?: string[]; // IDs of friends
+  friendIds?: string[]; 
+  isBot?: boolean;
+  color?: string;
+}
+
+export interface FriendRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  color: string;
+  permissions: string[]; // 'ADMIN', 'MANAGE_SERVER', 'MANAGE_CHANNELS'
+}
+
+export interface Invite {
+  code: string;
+  serverId: string;
+  creatorId: string;
+  uses: number;
 }
 
 export interface Attachment {
@@ -25,7 +48,7 @@ export interface Message {
   sender?: User;
   timestamp: string;
   channelId: string;
-  attachments?: Attachment[]; // Added for files
+  attachments?: Attachment[];
 }
 
 export enum ChannelType {
@@ -48,6 +71,11 @@ export interface Server {
   id: string;
   name: string;
   iconUrl: string;
-  ownerId?: string; // To allow settings editing
+  ownerId: string;
+  memberIds: string[]; // Track who is in the server
   channels: Channel[];
+  roles: Role[]; // New: Custom roles
+  invites: Invite[]; // New: Active invites
+  boostLevel: number; // New: Boosts
+  userRoles?: Record<string, string[]>; // userId -> roleIds[]
 }

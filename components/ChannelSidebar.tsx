@@ -9,6 +9,8 @@ interface ChannelSidebarProps {
   currentUser: User;
   isHome: boolean;
   dmChannels: Channel[];
+  onOpenServerSettings: () => void;
+  onOpenUserSettings: () => void;
 }
 
 const ChannelSidebar: React.FC<ChannelSidebarProps> = ({ 
@@ -17,7 +19,9 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onSelectChannel,
   currentUser,
   isHome,
-  dmChannels
+  dmChannels,
+  onOpenServerSettings,
+  onOpenUserSettings
 }) => {
   const [showCreateChannel, setShowCreateChannel] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
@@ -34,17 +38,22 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   return (
     <div className="w-60 bg-[#2b2d31] flex flex-col flex-shrink-0">
       {/* Header */}
-      <div className="h-12 shadow-sm border-b border-[#1f2023] flex items-center px-4 hover:bg-[#35373c] cursor-pointer transition-colors relative">
+      <div 
+        onClick={() => !isHome && onOpenServerSettings()}
+        className={`h-12 shadow-sm border-b border-[#1f2023] flex items-center px-4 hover:bg-[#35373c] cursor-pointer transition-colors relative ${!isHome ? 'hover:bg-[#35373c]' : ''}`}
+      >
         {isHome ? (
            <input 
              className="bg-[#1e1f22] text-sm text-[#dbdee1] rounded px-2 py-1 w-full outline-none" 
              placeholder="Find or start a conversation" 
+             onClick={(e) => e.stopPropagation()}
            />
         ) : (
           <>
             <h1 className="font-bold text-white truncate max-w-[180px]">{server?.name}</h1>
             <svg className="ml-auto text-white" width="18" height="18" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M16.59 8.59003L12 13.17L7.41003 8.59003L6 10L12 16L18 10L16.59 8.59003Z"/>
+               {/* Chevron */}
+               <path fill="currentColor" d="M16.59 8.59003L12 13.17L7.41003 8.59003L6 10L12 16L18 10L16.59 8.59003Z"/>
             </svg>
           </>
         )}
@@ -59,7 +68,7 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
               </div>
               {dmChannels.length === 0 && (
                 <div className="px-2 text-xs text-[#949ba4] italic mt-2">
-                  No active conversations. Click a member on the right to start chatting!
+                  No active conversations.
                 </div>
               )}
               {dmChannels.map(dm => (
@@ -133,24 +142,21 @@ const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
       {/* User Bar */}
       <div className="bg-[#232428] px-2 py-1.5 flex items-center">
-        <div className="relative group cursor-pointer mr-2">
+        <div className="relative group cursor-pointer mr-2" onClick={onOpenUserSettings}>
            <img 
             src={currentUser.avatarUrl} 
             alt={currentUser.username} 
-            className="w-8 h-8 rounded-full object-cover bg-gray-500"
+            className="w-8 h-8 rounded-full object-cover bg-gray-500 hover:opacity-80"
           />
-          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#232428] rounded-full"></div>
+          <div className={`absolute bottom-0 right-0 w-3 h-3 border-2 border-[#232428] rounded-full ${currentUser.status === 'offline' ? 'bg-gray-500' : 'bg-green-500'}`}></div>
         </div>
-        <div className="flex-1 min-w-0 mr-1">
-          <div className="text-white text-sm font-medium truncate">{currentUser.username}</div>
+        <div className="flex-1 min-w-0 mr-1 cursor-pointer" onClick={onOpenUserSettings}>
+          <div className="text-white text-sm font-medium truncate hover:underline">{currentUser.username}</div>
           <div className="text-[#b5bac1] text-xs truncate">#{currentUser.id.substring(0,4)}</div>
         </div>
         <div className="flex">
-          <button className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#3f4147] text-[#b5bac1] hover:text-white transition-colors">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19 11H5a1 1 0 000 2h14a1 1 0 000-2z" /></svg>
-          </button>
-          <button className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#3f4147] text-[#b5bac1] hover:text-white transition-colors">
-             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          <button onClick={onOpenUserSettings} className="w-8 h-8 flex items-center justify-center rounded hover:bg-[#3f4147] text-[#b5bac1] hover:text-white transition-colors">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
           </button>
         </div>
       </div>
